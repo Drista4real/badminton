@@ -10,6 +10,7 @@ Backend (C# .NET API):** Chạy độc lập, đóng vai trò là cổng xử l�
 📁 2. CẤU TRÚC THƯ MỤC & CÔNG DỤNG (Project Structure)
 Dự án tổng được quản lý trong thư mục `badminton_project/`, chia thành 2 nhánh chính độc lập:
 📱 A. Phân hệ Frontend: `badminton_app_and_web` (Flutter - GetX Pattern)
+```text
 badminton_app_and_web/
 ├── android/                  # Cấu hình Native Android (Đã tích hợp SHA-1, SHA-256)
 ├── ios/                      # Cấu hình Native iOS
