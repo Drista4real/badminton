@@ -1,0 +1,6 @@
+@backend_caulong_HostAddress = http://localhost:5011
+
+GET {{backend_caulong_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
