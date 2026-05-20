@@ -17,34 +17,35 @@ badminton_app_and_web/
 ├── build/                    # Chứa các file biên dịch đầu ra (Ví dụ: app-debug.apk)
 ├── main.dart                 # File chạy đầu tiên của toàn bộ project Flutter, khởi tạo Firebase
 └── lib/
-    ├── apps/                 # Cấu hình cấp cao nhất để khởi tạo ứng dụng (GetMaterialApp, môi trường gốc).
-    ├── bindings/             # Nơi chứa code Tiêm phụ thuộc (Dependency Injection) của GetX.
-    ├── commons/              # Các thành phần logic/giao diện dùng chung 100% cho cả App và Web.
-    ├── constants/            # Biến hằng số (Mã màu lưới trạng thái, link Base URL của API).
-    ├── state/                # Quản lý các trạng thái toàn cục (Ví dụ: kiểm tra kết nối mạng).
-    ├── styles/               # Cấu hình giao diện (Theme sáng/tối, Font chữ mặc định).
-    ├── widgets/              # Các UI Component tự code tái sử dụng (Nút bấm, ô nhập liệu chuẩn).
-    ├── controllers/          # "Bộ não" Frontend: Chứa logic nghiệp vụ, tính toán tổng tiền, xử lý form.
-    ├── localization/         # File dịch thuật đa ngôn ngữ (Tiếng Việt / Tiếng Anh).
-    ├── middlewares/          # Các lớp chặn luồng điều hướng (Chặn vào Đặt sân nếu chưa đăng nhập).
-    ├── routes/               # Định nghĩa đường dẫn điều hướng (app_pages.dart, app_routes.dart, web_routes.dart).
-    ├── utils/                # Hàm tiện ích dùng chung (Format ngày giờ, format tiền tệ VNĐ).
+    ├── apps/                 # Cấu hình cấp cao nhất để khởi tạo ứng dụng (GetMaterialApp, môi trường gốc)
+    ├── bindings/             # Nơi chứa code Tiêm phụ thuộc (Dependency Injection) của GetX
+    ├── commons/              # Các thành phần logic/giao diện dùng chung 100% cho cả App và Web
+    ├── constants/            # Biến hằng số (Mã màu lưới trạng thái, link Base URL của API)
+    ├── state/                # Quản lý các trạng thái toàn cục (Ví dụ: kiểm tra kết nối mạng)
+    ├── styles/               # Cấu hình giao diện (Theme sáng/tối, Font chữ mặc định)
+    ├── widgets/              # Các UI Component tự code tái sử dụng (Nút bấm, ô nhập liệu chuẩn)
+    ├── controllers/          # "Bộ não" Frontend: Chứa logic nghiệp vụ, tính toán tổng tiền, xử lý form
+    ├── localization/         # File dịch thuật đa ngôn ngữ (Tiếng Việt / Tiếng Anh)
+    ├── middlewares/          # Các lớp chặn luồng điều hướng (Chặn vào Đặt sân nếu chưa đăng nhập)
+    ├── routes/               # Định nghĩa đường dẫn điều hướng (app_pages.dart, app_routes.dart, web_routes.dart)
+    ├── utils/                # Hàm tiện ích dùng chung (Format ngày giờ, format tiền tệ VNĐ)
     ├── data/                 # TẦNG QUẢN LÝ VÀ GIAO TIẾP DỮ LIỆU
-    │   ├── local/            # Cấu hình lưu trữ dưới máy (Lưu Token FaceID/Vân tay vào Secure Storage).
-    │   ├── models/           # Class ép kiểu dữ liệu từ JSON (Backend) sang Object của Dart.
-    │   ├── network/          # Cấu hình kết nối mạng (Dio), Interceptor và kết nối Real-time.
-    │   └── repository/       # Tầng trung gian điều phối: Quyết định lấy dữ liệu từ Network hay Local Cache.
+    │   ├── local/            # Cấu hình lưu trữ dưới máy (Lưu Token FaceID/Vân tay vào Secure Storage)
+    │   ├── models/           # Class ép kiểu dữ liệu từ JSON (Backend) sang Object của Dart
+    │   ├── network/          # Cấu hình kết nối mạng (Dio), Interceptor và kết nối Real-time
+    │   └── repository/       # Tầng trung gian điều phối: Quyết định lấy dữ liệu từ Network hay Local Cache
     └── views/                # TẦNG PHÂN TÁCH GIAO DIỆN UI
-        ├── app/              # Giao diện Mobile App cho Người chơi (auth, booking, wallet, home, history, profile).
-        └── web/              # Giao diện Web Desktop cho Quản trị viên (dashboard, finance, management, pos tại quầy).
+        ├── app/              # Giao diện Mobile App cho Người chơi (auth, booking, wallet, home, history, profile)
+        └── web/              # Giao diện Web Desktop cho Quản trị viên (dashboard, finance, management, pos tại quầy)
 🖥️ B. Phân hệ Backend: backend_caulong (C# .NET API - NoSQL Architecture)
+Plaintext
 backend_caulong/
-├── Connected Services/       # Quản lý gói thư viện bên thứ 3. Đã gỡ bỏ EF Core, thay thế bằng Google.Cloud.Firestore.
-├── Controllers/              # Thiết kế cực mỏng, chỉ chứa API bảo mật: Nhận Webhook ngân hàng và sinh mã VietQR.
-├── Models/                   # Class đại diện cho Documents NoSQL. Thiết kế dạng lồng nhau, dùng Attribute [FirestoreData].
-├── Services/                 # Logic kinh doanh cốt lõi: Thuật toán chống trùng sân (RunTransactionAsync), xử lý cộng điểm/hoàn tiền.
-├── Data/ (Repositories/)     # Thiết kế kết nối hệ thống Firebase thông qua chứng chỉ bảo mật Service Account Key.
-├── appsettings.json          # File cấu hình. Đã xóa kết nối SQL, thay bằng đường dẫn chứa file Private Key .json của Firebase.
+├── Connected Services/       # Quản lý gói thư viện bên thứ 3. Đã gỡ bỏ EF Core, thay thế bằng Google.Cloud.Firestore
+├── Controllers/              # Thiết kế cực mỏng, chỉ chứa API bảo mật: Nhận Webhook ngân hàng và sinh mã VietQR
+├── Models/                   # Class đại diện cho Documents NoSQL. Thiết kế dạng lồng nhau, dùng Attribute [FirestoreData]
+├── Services/                 # Logic kinh doanh cốt lõi: Thuật toán chống trùng sân (RunTransactionAsync), xử lý cộng điểm/hoàn tiền
+├── Data/                     # (Hoặc Repositories/): Thiết kế kết nối hệ thống Firebase thông qua chứng chỉ bảo mật Service Account Key
+├── appsettings.json          # File cấu hình. Đã xóa kết nối SQL, thay bằng đường dẫn chứa file Private Key .json của Firebase
 └── Program.cs                # Gốc khởi chạy hệ thống, đăng ký các Services và Middleware
 
 🛠️ 3. TRẠNG THÁI CẤU HÌNH HỆ THỐNG
