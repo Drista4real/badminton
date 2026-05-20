@@ -48,7 +48,7 @@ backend_caulong/
 ├── Data/                     # (Hoặc Repositories/): Thiết kế kết nối hệ thống Firebase thông qua chứng chỉ bảo mật Service Account Key
 ├── appsettings.json          # File cấu hình. Đã xóa kết nối SQL, thay bằng đường dẫn chứa file Private Key .json của Firebase
 └── Program.cs                # Gốc khởi chạy hệ thống, đăng ký các Services và Middleware
-
+```
 🛠️ 3. TRẠNG THÁI CẤU HÌNH HỆ THỐNG
 🔐 Authentication (Xác thực)
 Đã kích hoạt trên Firebase Console các phương thức: Email/Password và Phone (OTP).
