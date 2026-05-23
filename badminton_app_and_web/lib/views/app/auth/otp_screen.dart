@@ -5,6 +5,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import '../home/home_screen.dart';
 
 import '../../../constants/app_colors.dart';
 import '../../../widgets/custom_button.dart';
@@ -254,8 +255,10 @@ class _OtpScreenState extends State<OtpScreen> {
 
                         const SizedBox(height: 28),
 
-                        CustomButton(text: 'Xác nhận', onTap: () {}),
-
+                       CustomButton(
+                          text: 'Xác nhận',
+                          onTap: () => Get.offAll(() => const HomeScreen()),
+                        ),
                         const SizedBox(height: 16),
 
                         // ── Gửi lại mã
