@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../../../constants/app_colors.dart';
 import 'package:get/get.dart';
 import '../booking/booking_screen.dart';
+import '../notification/notification_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -488,9 +489,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 onTap: () {
                   if (i == 1) {
                     Get.to(() => const BookingScreen());
-                   } else {
-                    setState(() => _selectedNavIndex = i);
-                   }
+                  } else if (i == 3) {
+                    Get.to(() => const NotificationScreen());
+                  } else {
+                     setState(() => _selectedNavIndex = i);
+                  }
                 },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
