@@ -8,6 +8,7 @@ import '../../../constants/app_colors.dart';
 import 'package:get/get.dart';
 import '../booking/booking_screen.dart';
 import '../notification/notification_screen.dart';
+import '../wallet/wallet_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -491,9 +492,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     Get.to(() => const BookingScreen());
                   } else if (i == 3) {
                     Get.to(() => const NotificationScreen());
+                  } else if (i == 2) {
+                    Get.to(() => const WalletScreen());
                   } else {
-                     setState(() => _selectedNavIndex = i);
+                    setState(() => _selectedNavIndex = i);
                   }
+                  
                 },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
