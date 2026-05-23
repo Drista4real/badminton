@@ -5,6 +5,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../constants/app_colors.dart';
+import 'package:get/get.dart';
+import '../booking/booking_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -483,7 +485,13 @@ class _HomeScreenState extends State<HomeScreen> {
             children: List.generate(items.length, (i) {
               final isSelected = _selectedNavIndex == i;
               return GestureDetector(
-                onTap: () => setState(() => _selectedNavIndex = i),
+                onTap: () {
+                  if (i == 1) {
+                    Get.to(() => const BookingScreen());
+                   } else {
+                    setState(() => _selectedNavIndex = i);
+                   }
+                },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
