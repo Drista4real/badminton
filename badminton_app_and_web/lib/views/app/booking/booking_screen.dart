@@ -1,10 +1,10 @@
-// ===============================
-// FILE: lib/views/app/booking/booking_screen.dart
-// ===============================
+
 
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import '../../../constants/app_colors.dart';
 import '../../../widgets/custom_button.dart';
+import '../payment/payment_screen.dart';
 
 class BookingScreen extends StatefulWidget {
   const BookingScreen({super.key});
@@ -532,7 +532,19 @@ class _BookingScreenState extends State<BookingScreen>
               ],
             ),
             const SizedBox(height: 16),
-            CustomButton(text: 'Xác nhận →', onTap: () => Navigator.pop(context)),
+            CustomButton(
+              text: 'Xác nhận →',
+              onTap: () {
+                Navigator.pop(context);
+                Get.to(() => PaymentScreen(
+                      courtName: 'Sân $court',
+                      price: total,
+                      date: '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
+                      time: '${start.toString().padLeft(2, '0')}:00 - ${end.toString().padLeft(2, '0')}:00',
+                      isFixed: false,
+                    ));
+              },
+            ),
           ],
         ),
       ),
@@ -966,7 +978,21 @@ class _BookingScreenState extends State<BookingScreen>
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: CustomButton(text: 'Thanh toán', onTap: () {}),
+                    child: CustomButton(
+                      text: 'Thanh toán',
+                      onTap: () {
+                        final total = _calcFixedTotal();
+                        final courtNames = _selectedFixedCourts.join(', ');
+                        Get.to(() => PaymentScreen(
+                              courtName: 'Sân $courtNames (Cố định)',
+                              price: total,
+                              date: 'Mỗi tuần (${_selectedWeekdays.join(', ')})',
+                              time: '${_formatHour(_fixedStart)} - ${_formatHour(_fixedEnd)}',
+                              isFixed: true,
+                              fixedDuration: '$_months tháng',
+                            ));
+                      },
+                    ),
                   ),
                 ],
               ),
