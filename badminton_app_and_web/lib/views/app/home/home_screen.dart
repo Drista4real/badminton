@@ -1,6 +1,4 @@
-// ===============================
-// FILE: lib/views/app/home/home_screen.dart
-// ===============================
+
 
 import 'package:flutter/material.dart';
 
@@ -9,6 +7,7 @@ import 'package:get/get.dart';
 import '../booking/booking_screen.dart';
 import '../notification/notification_screen.dart';
 import '../wallet/wallet_screen.dart';
+import '../profile/profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -494,6 +493,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     Get.to(() => const NotificationScreen());
                   } else if (i == 2) {
                     Get.to(() => const WalletScreen());
+                  } else if (i == 4) {
+                    Get.to(() => const ProfileScreen());
                   } else {
                     setState(() => _selectedNavIndex = i);
                   }
