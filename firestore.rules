@@ -1,0 +1,88 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwnerResource() {
+      return isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    function isSelf(userId) {
+      return isSignedIn() && userId == request.auth.uid;
+    }
+
+    function onlyNotificationReadFieldsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['isRead', 'readAt', 'updatedAt']);
+    }
+
+    function safeUserProfileFields() {
+      return [
+        'id',
+        'email',
+        'phoneNumber',
+        'fullName',
+        'avatarUrl',
+        'emailVerified',
+        'isActive',
+        'createdAt',
+        'updatedAt'
+      ];
+    }
+
+    function isValidSelfProfile(userId) {
+      return isSelf(userId)
+        && request.resource.data.keys().hasOnly(safeUserProfileFields())
+        && request.resource.data.id == userId
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.emailVerified == request.auth.token.email_verified
+        && request.resource.data.isActive == true;
+    }
+
+    match /orders/{orderId} {
+      allow read: if isOwnerResource();
+      allow write: if false;
+    }
+
+    match /bookings/{bookingId} {
+      allow read: if isOwnerResource();
+      allow write: if false;
+    }
+
+    match /users/{userId} {
+      allow read: if isSelf(userId);
+      allow create: if isValidSelfProfile(userId);
+      allow update: if isValidSelfProfile(userId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(safeUserProfileFields());
+      allow delete: if false;
+    }
+
+    match /courts/{courtId} {
+      allow read, write: if false;
+    }
+
+    match /bookingSlotLocks/{lockId} {
+      allow read, write: if false;
+    }
+
+    match /walletTransactions/{transactionId} {
+      allow read, write: if false;
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isOwnerResource();
+      allow update: if isOwnerResource()
+        && request.resource.data.userId == resource.data.userId
+        && onlyNotificationReadFieldsChanged();
+      allow create, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
