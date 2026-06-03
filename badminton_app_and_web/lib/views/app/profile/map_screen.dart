@@ -4,7 +4,7 @@
 
 import 'package:flutter/material.dart';
 
-import '../../../constants/app_colors.dart';
+import '../../../commons/styles/app_colors.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -17,9 +17,24 @@ class _MapScreenState extends State<MapScreen> {
   int _selectedTransport = 0; // 0: Ô tô, 1: Xe máy, 2: Đi bộ
 
   final List<Map<String, dynamic>> _transportModes = [
-    {'icon': Icons.directions_car_rounded, 'label': 'Ô tô', 'time': '25 phút', 'distance': '3.2 km'},
-    {'icon': Icons.two_wheeler_rounded, 'label': 'Xe máy', 'time': '12 phút', 'distance': '2.5 km'},
-    {'icon': Icons.directions_walk_rounded, 'label': 'Đi bộ', 'time': '38 phút', 'distance': '2.1 km'},
+    {
+      'icon': Icons.directions_car_rounded,
+      'label': 'Ô tô',
+      'time': '25 phút',
+      'distance': '3.2 km',
+    },
+    {
+      'icon': Icons.two_wheeler_rounded,
+      'label': 'Xe máy',
+      'time': '12 phút',
+      'distance': '2.5 km',
+    },
+    {
+      'icon': Icons.directions_walk_rounded,
+      'label': 'Đi bộ',
+      'time': '38 phút',
+      'distance': '2.1 km',
+    },
   ];
 
   @override
@@ -40,12 +55,20 @@ class _MapScreenState extends State<MapScreen> {
               color: const Color(0xFFF0FAF9),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(Icons.arrow_back_ios_new_rounded, color: AppColors.primary, size: 16),
+            child: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: AppColors.primary,
+              size: 16,
+            ),
           ),
         ),
         title: const Text(
           'Tìm đường',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.black),
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: AppColors.black,
+          ),
         ),
         centerTitle: true,
       ),
@@ -79,21 +102,24 @@ class _MapScreenState extends State<MapScreen> {
           Padding(
             padding: const EdgeInsets.only(left: 18),
             child: Column(
-              children: List.generate(3, (_) => Container(
-                width: 2,
-                height: 5,
-                margin: const EdgeInsets.symmetric(vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppColors.grey.withOpacity(0.4),
-                  borderRadius: BorderRadius.circular(1),
+              children: List.generate(
+                3,
+                (_) => Container(
+                  width: 2,
+                  height: 5,
+                  margin: const EdgeInsets.symmetric(vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.grey.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(1),
+                  ),
                 ),
-              )),
+              ),
             ),
           ),
           _buildLocationRow(
             icon: Icons.location_on_rounded,
             iconColor: const Color(0xFFEF5350),
-            label: 'Sân cầu lông ShuttleGo',
+            label: 'Vị trí cơ sở cầu lông',
             value: 'R0WV+7M Tầng Nhơm Phú, Hồ Chí Minh, Việt Nam',
           ),
         ],
@@ -114,7 +140,7 @@ class _MapScreenState extends State<MapScreen> {
           width: 36,
           height: 36,
           decoration: BoxDecoration(
-            color: iconColor.withOpacity(0.1),
+            color: iconColor.withValues(alpha: 0.1),
             shape: BoxShape.circle,
           ),
           child: Icon(icon, color: iconColor, size: 18),
@@ -154,9 +180,7 @@ class _MapScreenState extends State<MapScreen> {
           width: double.infinity,
           height: double.infinity,
           color: const Color(0xFFE8F4F3),
-          child: CustomPaint(
-            painter: _MapPainter(),
-          ),
+          child: CustomPaint(painter: _MapPainter()),
         ),
 
         // Route line overlay
@@ -196,7 +220,7 @@ class _MapScreenState extends State<MapScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.85),
+              color: Colors.white.withValues(alpha: 0.85),
               borderRadius: BorderRadius.circular(6),
             ),
             child: const Text(
@@ -224,7 +248,7 @@ class _MapScreenState extends State<MapScreen> {
             borderRadius: BorderRadius.circular(8),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.15),
+                color: Colors.black.withValues(alpha: 0.15),
                 blurRadius: 6,
                 offset: const Offset(0, 2),
               ),
@@ -248,7 +272,7 @@ class _MapScreenState extends State<MapScreen> {
             shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
-                color: color.withOpacity(0.4),
+                color: color.withValues(alpha: 0.4),
                 blurRadius: 8,
                 offset: const Offset(0, 3),
               ),
@@ -256,18 +280,11 @@ class _MapScreenState extends State<MapScreen> {
           ),
           child: Icon(icon, color: Colors.white, size: 18),
         ),
-        Container(
-          width: 2,
-          height: 10,
-          color: color,
-        ),
+        Container(width: 2, height: 10, color: color),
         Container(
           width: 8,
           height: 8,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
       ],
     );
@@ -280,7 +297,7 @@ class _MapScreenState extends State<MapScreen> {
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withValues(alpha: 0.08),
             blurRadius: 20,
             offset: const Offset(0, -4),
           ),
@@ -301,12 +318,19 @@ class _MapScreenState extends State<MapScreen> {
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   margin: const EdgeInsets.symmetric(horizontal: 6),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
-                    color: isSelected ? AppColors.primary : const Color(0xFFF0FAF9),
+                    color: isSelected
+                        ? AppColors.primary
+                        : const Color(0xFFF0FAF9),
                     borderRadius: BorderRadius.circular(24),
                     border: Border.all(
-                      color: isSelected ? AppColors.primary : const Color(0xFFDDEEED),
+                      color: isSelected
+                          ? AppColors.primary
+                          : const Color(0xFFDDEEED),
                     ),
                   ),
                   child: Row(
@@ -368,7 +392,9 @@ class _MapScreenState extends State<MapScreen> {
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
                 elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
               ),
             ),
           ),
@@ -493,14 +519,20 @@ class _RoutePainter extends CustomPainter {
     final path = Path();
     path.moveTo(size.width * 0.35, 80);
     path.cubicTo(
-      size.width * 0.35, 150,
-      size.width * 0.6, 150,
-      size.width * 0.6, 220,
+      size.width * 0.35,
+      150,
+      size.width * 0.6,
+      150,
+      size.width * 0.6,
+      220,
     );
     path.cubicTo(
-      size.width * 0.6, 260,
-      size.width * 0.7, 260,
-      size.width * 0.72, 300,
+      size.width * 0.6,
+      260,
+      size.width * 0.7,
+      260,
+      size.width * 0.72,
+      300,
     );
 
     canvas.drawPath(path, paint);

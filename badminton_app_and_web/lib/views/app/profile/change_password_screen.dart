@@ -5,7 +5,8 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
-import '../../../constants/app_colors.dart';
+import '../../../commons/styles/app_colors.dart';
+import '../../../controllers/app/profile_controller.dart';
 
 class ChangePasswordScreen extends StatefulWidget {
   const ChangePasswordScreen({super.key});
@@ -18,6 +19,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   final _currentPasswordController = TextEditingController();
   final _newPasswordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  late final ProfileController _profileController;
 
   bool _showCurrent = false;
   bool _showNew = false;
@@ -29,6 +31,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   @override
   void initState() {
     super.initState();
+    _profileController = Get.find<ProfileController>();
     _newPasswordController.addListener(_checkPasswordStrength);
   }
 
@@ -40,8 +43,14 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     }
     int strength = 0;
     if (password.length >= 8) strength++;
-    if (RegExp(r'[A-Z]').hasMatch(password) && RegExp(r'[a-z]').hasMatch(password)) strength++;
-    if (RegExp(r'[0-9]').hasMatch(password) && RegExp(r'[!@#\$%^&*]').hasMatch(password)) strength++;
+    if (RegExp(r'[A-Z]').hasMatch(password) &&
+        RegExp(r'[a-z]').hasMatch(password)) {
+      strength++;
+    }
+    if (RegExp(r'[0-9]').hasMatch(password) &&
+        RegExp(r'[!@#\$%^&*]').hasMatch(password)) {
+      strength++;
+    }
     setState(() => _passwordStrength = strength);
   }
 
@@ -69,12 +78,20 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
               color: const Color(0xFFF0FAF9),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(Icons.arrow_back_ios_new_rounded, color: AppColors.primary, size: 16),
+            child: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: AppColors.primary,
+              size: 16,
+            ),
           ),
         ),
         title: const Text(
           'Thay đổi mật khẩu',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.black),
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: AppColors.black,
+          ),
         ),
         centerTitle: true,
       ),
@@ -85,6 +102,10 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
           children: [
             // Info banner
             _buildInfoBanner(),
+            const SizedBox(height: 16),
+
+            // Gmail verification
+            _buildVerificationCard(),
             const SizedBox(height: 24),
 
             // Form
@@ -107,18 +128,22 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.primary.withOpacity(0.08),
+        color: AppColors.primary.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.info_outline_rounded, color: AppColors.primary, size: 20),
+          const Icon(
+            Icons.info_outline_rounded,
+            color: AppColors.primary,
+            size: 20,
+          ),
           const SizedBox(width: 12),
           const Expanded(
             child: Text(
-              'Để bảo mật tài khoản của bạn, vui lòng nhập mật khẩu hiện tại và chọn một mật khẩu mới, mạnh hơn.',
+              'Trước khi đổi mật khẩu, bạn cần xác thực qua link gửi về Gmail. Link có hiệu lực 5 phút và chỉ được gửi lại sau 60 giây.',
               style: TextStyle(
                 fontSize: 12,
                 color: AppColors.primary,
@@ -132,63 +157,218 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     );
   }
 
-  Widget _buildFormCard() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Current password
-          _buildFieldLabel('Mật khẩu hiện tại'),
-          const SizedBox(height: 8),
-          _buildPasswordField(
-            controller: _currentPasswordController,
-            hint: '••••••••',
-            showPassword: _showCurrent,
-            onToggle: () => setState(() => _showCurrent = !_showCurrent),
-          ),
-          const SizedBox(height: 20),
+  Widget _buildVerificationCard() {
+    return Obx(() {
+      final isVerified = _profileController.isPasswordChangeVerified.value;
+      final isLoading = _profileController.isPasswordVerificationLoading.value;
+      final cooldown =
+          _profileController.passwordVerificationCooldownSecondsLeft.value;
+      final expiresIn =
+          _profileController.passwordVerificationExpiresSecondsLeft.value;
+      final hasActiveWindow = expiresIn > 0;
 
-          // New password
-          _buildFieldLabel('Mật khẩu mới'),
-          const SizedBox(height: 8),
-          _buildPasswordField(
-            controller: _newPasswordController,
-            hint: 'Nhập mật khẩu mới',
-            showPassword: _showNew,
-            onToggle: () => setState(() => _showNew = !_showNew),
-          ),
-
-          // Password strength indicator
-          if (_passwordStrength > 0) ...[
-            const SizedBox(height: 10),
-            _buildStrengthIndicator(),
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 12,
+              offset: const Offset(0, 3),
+            ),
           ],
-          const SizedBox(height: 20),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: (isVerified ? Colors.green : AppColors.primary)
+                        .withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    isVerified
+                        ? Icons.verified_user_rounded
+                        : Icons.mark_email_read_outlined,
+                    color: isVerified ? Colors.green : AppColors.primary,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isVerified ? 'Gmail đã xác thực' : 'Xác thực Gmail',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.black,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        isVerified
+                            ? 'Bạn có thể cập nhật mật khẩu khi phiên xác thực còn hiệu lực.'
+                            : 'Gửi link xác thực đến ${_profileController.passwordVerificationEmail}, mở link trong Gmail rồi quay lại xác nhận.',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.grey,
+                          height: 1.45,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (hasActiveWindow) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.timer_outlined,
+                      color: AppColors.primary,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Hiệu lực còn ${_profileController.passwordVerificationExpiryLabel}',
+                      style: const TextStyle(
+                        color: AppColors.primary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed:
+                      _profileController.canSendPasswordVerification &&
+                          !isLoading
+                      ? _profileController.sendPasswordChangeVerification
+                      : null,
+                  icon: isLoading && cooldown == 0
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.send_outlined, size: 16),
+                  label: Text(
+                    cooldown > 0
+                        ? 'Gửi lại sau ${cooldown}s'
+                        : hasActiveWindow
+                        ? 'Gửi lại link'
+                        : 'Gửi link xác thực',
+                  ),
+                ),
+                if (hasActiveWindow && !isVerified)
+                  ElevatedButton.icon(
+                    onPressed: isLoading
+                        ? null
+                        : _profileController.confirmPasswordChangeVerification,
+                    icon: const Icon(Icons.check_circle_outline, size: 16),
+                    label: const Text('Tôi đã xác minh'),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      );
+    });
+  }
 
-          // Confirm password
-          _buildFieldLabel('Xác nhận mật khẩu mới'),
-          const SizedBox(height: 8),
-          _buildPasswordField(
-            controller: _confirmPasswordController,
-            hint: 'Nhập lại mật khẩu mới',
-            showPassword: _showConfirm,
-            onToggle: () => setState(() => _showConfirm = !_showConfirm),
-          ),
-        ],
-      ),
-    );
+  Widget _buildFormCard() {
+    return Obx(() {
+      final canEdit = _profileController.isPasswordChangeVerified.value;
+
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 12,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Current password
+            _buildFieldLabel('Mật khẩu hiện tại'),
+            const SizedBox(height: 8),
+            _buildPasswordField(
+              controller: _currentPasswordController,
+              hint: '••••••••',
+              showPassword: _showCurrent,
+              onToggle: () => setState(() => _showCurrent = !_showCurrent),
+              enabled: canEdit,
+            ),
+            const SizedBox(height: 20),
+
+            // New password
+            _buildFieldLabel('Mật khẩu mới'),
+            const SizedBox(height: 8),
+            _buildPasswordField(
+              controller: _newPasswordController,
+              hint: 'Nhập mật khẩu mới',
+              showPassword: _showNew,
+              onToggle: () => setState(() => _showNew = !_showNew),
+              enabled: canEdit,
+            ),
+
+            // Password strength indicator
+            if (_passwordStrength > 0) ...[
+              const SizedBox(height: 10),
+              _buildStrengthIndicator(),
+            ],
+            const SizedBox(height: 20),
+
+            // Confirm password
+            _buildFieldLabel('Xác nhận mật khẩu mới'),
+            const SizedBox(height: 8),
+            _buildPasswordField(
+              controller: _confirmPasswordController,
+              hint: 'Nhập lại mật khẩu mới',
+              showPassword: _showConfirm,
+              onToggle: () => setState(() => _showConfirm = !_showConfirm),
+              enabled: canEdit,
+            ),
+          ],
+        ),
+      );
+    });
   }
 
   Widget _buildFieldLabel(String label) {
@@ -207,6 +387,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     required String hint,
     required bool showPassword,
     required VoidCallback onToggle,
+    bool enabled = true,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -216,17 +397,23 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       ),
       child: TextField(
         controller: controller,
+        enabled: enabled,
         obscureText: !showPassword,
         style: const TextStyle(fontSize: 14, color: AppColors.black),
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: const TextStyle(color: AppColors.grey, fontSize: 13),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
           suffixIcon: GestureDetector(
             onTap: onToggle,
             child: Icon(
-              showPassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+              showPassword
+                  ? Icons.visibility_outlined
+                  : Icons.visibility_off_outlined,
               color: AppColors.grey,
               size: 20,
             ),
@@ -290,26 +477,43 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   }
 
   Widget _buildSubmitButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 52,
-      child: ElevatedButton(
-        onPressed: _handleChangePassword,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
-          elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-        ),
-        child: const Text(
-          'Cập nhật mật khẩu',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
+    return Obx(() {
+      final canSubmit =
+          _profileController.isPasswordChangeVerified.value &&
+          !_profileController.isChangingPassword.value;
+
+      return SizedBox(
+        width: double.infinity,
+        height: 52,
+        child: ElevatedButton(
+          onPressed: canSubmit ? _handleChangePassword : null,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(28),
+            ),
           ),
+          child: _profileController.isChangingPassword.value
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text(
+                  'Cập nhật mật khẩu',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
         ),
-      ),
-    );
+      );
+    });
   }
 
   Widget _buildNote() {
@@ -340,52 +544,15 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     );
   }
 
-  void _handleChangePassword() {
-    final current = _currentPasswordController.text;
-    final newPass = _newPasswordController.text;
-    final confirm = _confirmPasswordController.text;
-
-    if (current.isEmpty || newPass.isEmpty || confirm.isEmpty) {
-      Get.snackbar(
-        'Thông báo',
-        'Vui lòng điền đầy đủ thông tin!',
-        backgroundColor: Colors.orange,
-        colorText: Colors.white,
-        snackPosition: SnackPosition.BOTTOM,
-      );
-      return;
-    }
-
-    if (newPass != confirm) {
-      Get.snackbar(
-        'Lỗi',
-        'Mật khẩu xác nhận không khớp!',
-        backgroundColor: const Color(0xFFEF5350),
-        colorText: Colors.white,
-        snackPosition: SnackPosition.BOTTOM,
-      );
-      return;
-    }
-
-    if (newPass.length < 8) {
-      Get.snackbar(
-        'Mật khẩu quá ngắn',
-        'Mật khẩu phải có ít nhất 8 ký tự!',
-        backgroundColor: Colors.orange,
-        colorText: Colors.white,
-        snackPosition: SnackPosition.BOTTOM,
-      );
-      return;
-    }
-
-    Get.snackbar(
-      'Thành công',
-      'Mật khẩu đã được cập nhật!',
-      backgroundColor: AppColors.primary,
-      colorText: Colors.white,
-      snackPosition: SnackPosition.BOTTOM,
+  Future<void> _handleChangePassword() async {
+    final changed = await _profileController.changePassword(
+      currentPassword: _currentPasswordController.text,
+      newPassword: _newPasswordController.text,
+      confirmPassword: _confirmPasswordController.text,
     );
-    Future.delayed(const Duration(seconds: 1), () {
+    if (!changed) return;
+
+    Future.delayed(const Duration(milliseconds: 600), () {
       if (mounted) Navigator.pop(context);
     });
   }

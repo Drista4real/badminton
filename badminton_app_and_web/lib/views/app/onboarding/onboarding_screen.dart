@@ -5,8 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
-import '../../../constants/app_colors.dart';
-import '../auth/login_screen.dart';
+import '../../../commons/styles/app_colors.dart';
 import 'onboarding_controller.dart';
 import 'onboarding_model.dart';
 
@@ -18,29 +17,32 @@ class OnboardingScreen extends StatefulWidget {
 }
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
-  final controller = Get.put(OnboardingController());
+  final controller = Get.find<OnboardingController>();
   final PageController pageController = PageController();
 
   final List<OnboardingModel> onboardingList = [
     OnboardingModel(
       image: 'assets/images/onboarding1.jpg',
       title: 'Đặt Sân\nSiêu Nhanh',
-      description:
-          'Tìm và đặt sân cầu lông\ngần bạn chỉ trong vài giây',
+      description: 'Tìm và đặt sân cầu lông\ngần bạn chỉ trong vài giây',
     ),
     OnboardingModel(
       image: 'assets/images/onboarding2.jpg',
       title: 'Tham Gia\nGiải Đấu',
-      description:
-          'Kết nối người chơi và\ntham gia các giải đấu hấp dẫn.',
+      description: 'Kết nối người chơi và\ntham gia các giải đấu hấp dẫn.',
     ),
     OnboardingModel(
       image: 'assets/images/onboarding3.jpg',
       title: 'Xây Dựng\nCộng Đồng',
-      description:
-          'Kết nối, tập luyện và\ncùng nhau nâng cao kỹ năng.',
+      description: 'Kết nối, tập luyện và\ncùng nhau nâng cao kỹ năng.',
     ),
   ];
+
+  @override
+  void dispose() {
+    pageController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -98,10 +100,7 @@ class _OnboardingPage extends StatelessWidget {
               return const LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [
-                  Colors.black,
-                  Colors.transparent,
-                ],
+                colors: [Colors.black, Colors.transparent],
                 stops: [0.65, 0.95], // Bắt đầu mờ từ 65% đến 95% của ảnh
               ).createShader(rect);
             },
@@ -158,7 +157,9 @@ class _OnboardingPage extends StatelessWidget {
                       () => AnimatedContainer(
                         duration: const Duration(milliseconds: 300),
                         margin: const EdgeInsets.only(right: 6),
-                        width: controller.currentPage.value == dotIndex ? 24 : 8,
+                        width: controller.currentPage.value == dotIndex
+                            ? 24
+                            : 8,
                         height: 8,
                         decoration: BoxDecoration(
                           color: controller.currentPage.value == dotIndex
@@ -177,7 +178,7 @@ class _OnboardingPage extends StatelessWidget {
                 GestureDetector(
                   onTap: () {
                     if (index == total - 1) {
-                      Get.to(() => const LoginScreen());
+                      controller.completeOnboarding();
                     } else {
                       pageController.nextPage(
                         duration: const Duration(milliseconds: 300),
@@ -193,7 +194,7 @@ class _OnboardingPage extends StatelessWidget {
                       borderRadius: BorderRadius.circular(28),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.15),
+                          color: Colors.black.withAlpha(38),
                           blurRadius: 15,
                           offset: const Offset(0, 5),
                         ),
@@ -217,7 +218,7 @@ class _OnboardingPage extends StatelessWidget {
                             size: 20,
                           ),
                         ),
-                        
+
                         // Giữa: Chữ trắng
                         Text(
                           index == total - 1 ? 'Bắt Đầu' : 'Tiếp Theo',
@@ -273,11 +274,11 @@ class _OnboardingPage extends StatelessWidget {
                         width: 42,
                         height: 42,
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.85),
+                          color: Colors.white.withAlpha(217),
                           borderRadius: BorderRadius.circular(14),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.05),
+                              color: Colors.black.withAlpha(13),
                               blurRadius: 8,
                               offset: const Offset(0, 3),
                             ),
@@ -295,18 +296,18 @@ class _OnboardingPage extends StatelessWidget {
 
                   if (index < total - 1)
                     GestureDetector(
-                      onTap: () => Get.to(() => const LoginScreen()),
+                      onTap: controller.completeOnboarding,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 16,
                           vertical: 8,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.85),
+                          color: Colors.white.withAlpha(217),
                           borderRadius: BorderRadius.circular(20),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.05),
+                              color: Colors.black.withAlpha(13),
                               blurRadius: 8,
                               offset: const Offset(0, 3),
                             ),
