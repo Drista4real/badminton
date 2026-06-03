@@ -512,7 +512,7 @@ class ProfileScreen extends GetView<ProfileController> {
                     ? null
                     : () async {
                         final password = await _showCurrentPasswordDialog(
-                          dialogContext,
+                          context,
                         );
                         if (password == null) return;
 
@@ -520,7 +520,11 @@ class ProfileScreen extends GetView<ProfileController> {
                           password,
                         );
                         if (saved && dialogContext.mounted) {
-                          Navigator.pop(dialogContext);
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (dialogContext.mounted) {
+                              Navigator.of(dialogContext).pop();
+                            }
+                          });
                         }
                       },
                 style: ElevatedButton.styleFrom(

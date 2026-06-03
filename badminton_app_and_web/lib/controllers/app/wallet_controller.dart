@@ -97,6 +97,8 @@ class WalletController extends GetxController {
 
   String formatPoints(int value) => CurrencyFormat.number(value);
 
+  bool get canRequestWithdraw => availableBalance.value > 0;
+
   String formatTransactionAmount(WalletTransactionModel transaction) {
     final prefix = transaction.isCredit ? '+' : '-';
     return '$prefix${formatMoney(transaction.amount.abs())}';
@@ -118,6 +120,15 @@ class WalletController extends GetxController {
   }
 
   void openWithdrawSheet(Widget sheet) {
+    if (!canRequestWithdraw) {
+      Get.snackbar(
+        'Số dư không đủ',
+        'Ví tiền hiện tại bằng 0 đồng nên không thể yêu cầu rút tiền.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return;
+    }
+
     resetWithdrawForm();
     Get.bottomSheet<void>(
       sheet,
@@ -144,6 +155,15 @@ class WalletController extends GetxController {
 
   Future<bool> submitWithdraw() async {
     if (isWithdrawing.value) return false;
+
+    if (!canRequestWithdraw) {
+      Get.snackbar(
+        'Số dư không đủ',
+        'Ví tiền hiện tại bằng 0 đồng nên không thể yêu cầu rút tiền.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return false;
+    }
 
     final bankName = selectedWithdrawBank.value;
     final amount = double.tryParse(withdrawAmountController.text.trim());

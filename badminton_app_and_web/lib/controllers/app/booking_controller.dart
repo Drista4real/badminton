@@ -191,6 +191,26 @@ class BookingController extends GetxController {
     return '${formatMinutes(startTime)} - ${formatMinutes(endTime)}';
   }
 
+  DateTime get fixedRegistrationStartDate => _dateOnly(DateTime.now());
+
+  DateTime get fixedRegistrationEndDate {
+    final startDate = fixedRegistrationStartDate;
+    return DateTime(
+      startDate.year,
+      startDate.month + months.value,
+      startDate.day,
+    ).subtract(const Duration(days: 1));
+  }
+
+  String get fixedDateRangeLabel {
+    return '${DateFormatUtils.dayMonthYear(fixedRegistrationStartDate)} - ${DateFormatUtils.dayMonthYear(fixedRegistrationEndDate)}';
+  }
+
+  String get fixedTimeRangeLabel {
+    final minutes = (fixedHours * minutesPerHour).round();
+    return '${formatHour(fixedStart.value)} - ${formatHour(fixedEnd.value)} (${formatDuration(minutes)})';
+  }
+
   String formatDuration(int minutes) {
     final hours = minutes ~/ minutesPerHour;
     final remainder = minutes % minutesPerHour;
@@ -826,7 +846,7 @@ class BookingController extends GetxController {
 
     final courtId = selectedFixedCourtIds.first;
     final court = courts.firstWhereOrNull((item) => item.id == courtId);
-    final startDate = _dateOnly(DateTime.now());
+    final startDate = fixedRegistrationStartDate;
     final fixedDays = _selectedFixedDayNumbers();
 
     if (fixedDays.isEmpty) {
@@ -982,12 +1002,8 @@ class BookingController extends GetxController {
     final selected = selectedWeekdays.toSet();
     if (selected.isEmpty) return;
 
-    final startDate = _dateOnly(DateTime.now());
-    final endDate = DateTime(
-      startDate.year,
-      startDate.month + months.value,
-      startDate.day,
-    );
+    final startDate = fixedRegistrationStartDate;
+    final endDate = fixedRegistrationEndDate.add(const Duration(days: 1));
 
     var cursor = startDate;
     while (cursor.isBefore(endDate)) {
@@ -999,12 +1015,12 @@ class BookingController extends GetxController {
   }
 
   BookingSlotStatus _slotStatusForBooking(MaterializedBookingSlot booking) {
-    if (booking.source.status == OrderStatus.pending) {
-      return BookingSlotStatus.pending;
-    }
-
     if (booking.source.bookingType == BookingType.fixed) {
       return BookingSlotStatus.fixed;
+    }
+
+    if (booking.source.status == OrderStatus.pending) {
+      return BookingSlotStatus.pending;
     }
 
     return BookingSlotStatus.booked;

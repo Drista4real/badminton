@@ -99,19 +99,17 @@ class RegisterScreen extends GetView<AuthController> {
                     textInputAction: TextInputAction.next,
                     autofillHints: const [AutofillHints.email],
                   ),
-                  CustomTextField(
+                  CustomPasswordTextField(
                     controller: controller.registerPasswordController,
                     hint: 'Mật khẩu',
                     icon: Icons.lock_outline_rounded,
-                    obscure: true,
                     textInputAction: TextInputAction.next,
                     autofillHints: const [AutofillHints.newPassword],
                   ),
-                  CustomTextField(
+                  CustomPasswordTextField(
                     controller: controller.registerConfirmPasswordController,
                     hint: 'Nhập lại mật khẩu',
                     icon: Icons.lock_outline_rounded,
-                    obscure: true,
                     textInputAction: TextInputAction.done,
                     autofillHints: const [AutofillHints.newPassword],
                     onSubmitted: (_) => controller.register(),

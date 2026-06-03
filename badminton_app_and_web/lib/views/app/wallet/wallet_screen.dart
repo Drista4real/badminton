@@ -191,44 +191,48 @@ class _BalanceCard extends GetView<WalletController> {
               style: TextStyle(fontSize: 11, color: Colors.white60),
             ),
             const SizedBox(height: 18),
-            GestureDetector(
-              onTap: () => controller.openWithdrawSheet(const _WithdrawSheet()),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.4),
+            Obx(
+              () => GestureDetector(
+                onTap: controller.canRequestWithdraw
+                    ? () => controller.openWithdrawSheet(const _WithdrawSheet())
+                    : null,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
                   ),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.account_balance_rounded,
-                      color: Colors.white,
-                      size: 16,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.4),
                     ),
-                    SizedBox(width: 8),
-                    Text(
-                      'Yêu cầu rút tiền',
-                      style: TextStyle(
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.account_balance_rounded,
                         color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
+                        size: 16,
                       ),
-                    ),
-                    SizedBox(width: 6),
-                    Icon(
-                      Icons.arrow_forward_ios_rounded,
-                      color: Colors.white,
-                      size: 12,
-                    ),
-                  ],
+                      SizedBox(width: 8),
+                      Text(
+                        'Yêu cầu rút tiền',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      SizedBox(width: 6),
+                      Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        color: Colors.white,
+                        size: 12,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

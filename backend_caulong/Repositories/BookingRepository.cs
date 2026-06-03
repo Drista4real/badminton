@@ -33,9 +33,15 @@ public sealed class BookingRepository : IBookingRepository
             })
             .GetSnapshotAsync(cancellationToken);
 
-        return snapshot.Documents
-            .Where(document => document.Exists)
-            .Select(document => document.ConvertTo<BookingDocument>())
+        var bookings = snapshot.Documents
+            .Select(TryConvertToBookingDocument)
+            .OfType<BookingDocument>()
+            .ToArray();
+
+        var orderStatuses = await GetOrderStatusesByIdAsync(bookings, cancellationToken);
+
+        return bookings
+            .Where(booking => ShouldReturnActiveBooking(booking, orderStatuses))
             .ToArray();
     }
 
@@ -87,9 +93,17 @@ public sealed class BookingRepository : IBookingRepository
                     request.BlockingStatuses),
                 cancellationToken);
 
-            var hasOverlap = existingBookingsSnapshot.Documents
+            var existingBookings = existingBookingsSnapshot.Documents
                 .Where(document => document.Exists)
                 .Select(document => document.ConvertTo<BookingDocument>())
+                .ToArray();
+            var existingOrderStatuses = await GetOrderStatusesByIdAsync(
+                transaction,
+                existingBookings,
+                cancellationToken);
+
+            var hasOverlap = existingBookings
+                .Where(existing => ShouldReturnActiveBooking(existing, existingOrderStatuses))
                 .Any(existing =>
                     request.StartTime < existing.EndTime &&
                     existing.StartTime < request.EndTime);
@@ -192,21 +206,22 @@ public sealed class BookingRepository : IBookingRepository
                 request.EndTime,
                 BookingPriceCustomerType.Fixed);
 
-            var existingBookingsSnapshot = await transaction.GetSnapshotAsync(
-                BuildBlockingBookingsQuery(
-                    request.CourtId,
-                    bookingDates[0].Timestamp,
-                    bookingDates[^1].Timestamp,
-                    request.BlockingStatuses),
-                cancellationToken);
-
             var requestedDates = bookingDates
                 .Select(bookingDate => bookingDate.Date)
                 .ToHashSet();
+            var existingBookings = await GetBlockingBookingsForDatesAsync(
+                transaction,
+                request.CourtId,
+                bookingDates,
+                request.BlockingStatuses,
+                cancellationToken);
+            var existingOrderStatuses = await GetOrderStatusesByIdAsync(
+                transaction,
+                existingBookings,
+                cancellationToken);
 
-            var conflictingBooking = existingBookingsSnapshot.Documents
-                .Where(document => document.Exists)
-                .Select(document => document.ConvertTo<BookingDocument>())
+            var conflictingBooking = existingBookings
+                .Where(existing => ShouldReturnActiveBooking(existing, existingOrderStatuses))
                 .Where(existing => requestedDates.Contains(ToUtcDateOnly(existing.Date)))
                 .Where(existing =>
                     request.StartTime < existing.EndTime &&
@@ -381,18 +396,20 @@ public sealed class BookingRepository : IBookingRepository
                 template.EndTime,
                 BookingPriceCustomerType.Fixed);
 
-            var existingBookingsSnapshot = await transaction.GetSnapshotAsync(
-                BuildBlockingBookingsQuery(
-                    template.CourtId,
-                    bookingDates[0].Timestamp,
-                    bookingDates[^1].Timestamp,
-                    request.BlockingStatuses),
+            var requestedDates = bookingDates.Select(bookingDate => bookingDate.Date).ToHashSet();
+            var existingBookings = await GetBlockingBookingsForDatesAsync(
+                transaction,
+                template.CourtId,
+                bookingDates,
+                request.BlockingStatuses,
+                cancellationToken);
+            var existingOrderStatuses = await GetOrderStatusesByIdAsync(
+                transaction,
+                existingBookings,
                 cancellationToken);
 
-            var requestedDates = bookingDates.Select(bookingDate => bookingDate.Date).ToHashSet();
-            var conflictingBooking = existingBookingsSnapshot.Documents
-                .Where(document => document.Exists)
-                .Select(document => document.ConvertTo<BookingDocument>())
+            var conflictingBooking = existingBookings
+                .Where(existing => ShouldReturnActiveBooking(existing, existingOrderStatuses))
                 .Where(existing => requestedDates.Contains(ToUtcDateOnly(existing.Date)))
                 .Where(existing =>
                     template.StartTime < existing.EndTime &&
@@ -588,6 +605,133 @@ public sealed class BookingRepository : IBookingRepository
             .WhereIn("status", blockingStatuses);
     }
 
+    private async Task<IReadOnlyList<BookingDocument>> GetBlockingBookingsForDatesAsync(
+        Transaction transaction,
+        string courtId,
+        IReadOnlyCollection<FixedBookingWriteDate> bookingDates,
+        IReadOnlyCollection<string> blockingStatuses,
+        CancellationToken cancellationToken)
+    {
+        var blockingStatusSet = blockingStatuses.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var results = new List<BookingDocument>();
+
+        foreach (var bookingDate in bookingDates.DistinctBy(bookingDate => bookingDate.Date))
+        {
+            var snapshot = await transaction.GetSnapshotAsync(
+                BuildCourtDateBookingsQuery(courtId, bookingDate.Timestamp),
+                cancellationToken);
+
+            results.AddRange(snapshot.Documents
+                .Select(TryConvertToBookingDocument)
+                .OfType<BookingDocument>()
+                .Where(booking => blockingStatusSet.Contains(booking.Status)));
+        }
+
+        return results;
+    }
+
+    private Query BuildCourtDateBookingsQuery(string courtId, Timestamp date)
+    {
+        return _firestoreDb
+            .Collection("bookings")
+            .WhereEqualTo("courtId", courtId)
+            .WhereEqualTo("date", date);
+    }
+
+    private static BookingDocument? TryConvertToBookingDocument(DocumentSnapshot document)
+    {
+        if (!document.Exists)
+        {
+            return null;
+        }
+
+        try
+        {
+            return document.ConvertTo<BookingDocument>();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private async Task<IReadOnlyDictionary<string, string>> GetOrderStatusesByIdAsync(
+        IReadOnlyList<BookingDocument> bookings,
+        CancellationToken cancellationToken)
+    {
+        var orderIds = bookings
+            .Select(booking => booking.OrderId)
+            .Where(orderId => !string.IsNullOrWhiteSpace(orderId))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (orderIds.Length == 0)
+        {
+            return new Dictionary<string, string>(StringComparer.Ordinal);
+        }
+
+        var statuses = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var orderId in orderIds)
+        {
+            var orderSnapshot = await _firestoreDb
+                .Collection("orders")
+                .Document(orderId)
+                .GetSnapshotAsync(cancellationToken);
+            if (!orderSnapshot.Exists)
+            {
+                continue;
+            }
+
+            statuses[orderId] = GetString(orderSnapshot, "status");
+        }
+
+        return statuses;
+    }
+
+    private async Task<IReadOnlyDictionary<string, string>> GetOrderStatusesByIdAsync(
+        Transaction transaction,
+        IReadOnlyList<BookingDocument> bookings,
+        CancellationToken cancellationToken)
+    {
+        var orderIds = bookings
+            .Select(booking => booking.OrderId)
+            .Where(orderId => !string.IsNullOrWhiteSpace(orderId))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (orderIds.Length == 0)
+        {
+            return new Dictionary<string, string>(StringComparer.Ordinal);
+        }
+
+        var statuses = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var orderId in orderIds)
+        {
+            var orderSnapshot = await transaction.GetSnapshotAsync(
+                _firestoreDb.Collection("orders").Document(orderId),
+                cancellationToken);
+            if (!orderSnapshot.Exists)
+            {
+                continue;
+            }
+
+            statuses[orderId] = GetString(orderSnapshot, "status");
+        }
+
+        return statuses;
+    }
+
+    private static bool ShouldReturnActiveBooking(
+        BookingDocument booking,
+        IReadOnlyDictionary<string, string> orderStatuses)
+    {
+        if (string.IsNullOrWhiteSpace(booking.OrderId))
+        {
+            return true;
+        }
+
+        return !orderStatuses.TryGetValue(booking.OrderId, out var orderStatus)
+            || !string.Equals(orderStatus, OrderStatuses.Cancelled, StringComparison.OrdinalIgnoreCase);
+    }
+
     private Query BuildBlockingBookingsQuery(
         string courtId,
         Timestamp startDate,
@@ -640,30 +784,48 @@ public sealed class BookingRepository : IBookingRepository
             return;
         }
 
-        var hasCompletedOrder = await UserHasCompletedOrderAsync(
+        var hasPaidOrder = await UserHasPaidOrderAsync(
             transaction,
             userId,
             cancellationToken);
-        if (!hasCompletedOrder)
+        if (!hasPaidOrder)
         {
             throw new ProtectedCourtWriteException(courtSnapshot.Reference.Id);
         }
     }
 
-    private async Task<bool> UserHasCompletedOrderAsync(
+    private async Task<bool> UserHasPaidOrderAsync(
         Transaction transaction,
         string userId,
         CancellationToken cancellationToken)
     {
-        var completedOrdersSnapshot = await transaction.GetSnapshotAsync(
+        return await UserHasOrderWithStatusAsync(
+                transaction,
+                userId,
+                OrderStatuses.Confirmed,
+                cancellationToken)
+            || await UserHasOrderWithStatusAsync(
+                transaction,
+                userId,
+                OrderStatuses.Completed,
+                cancellationToken);
+    }
+
+    private async Task<bool> UserHasOrderWithStatusAsync(
+        Transaction transaction,
+        string userId,
+        string status,
+        CancellationToken cancellationToken)
+    {
+        var ordersSnapshot = await transaction.GetSnapshotAsync(
             _firestoreDb
                 .Collection("orders")
                 .WhereEqualTo("userId", userId)
-                .WhereEqualTo("status", OrderStatuses.Completed)
+                .WhereEqualTo("status", status)
                 .Limit(1),
             cancellationToken);
 
-        return completedOrdersSnapshot.Documents.Any(document => document.Exists);
+        return ordersSnapshot.Documents.Any(document => document.Exists);
     }
 
     private static bool IsCourtProtected(DocumentSnapshot courtSnapshot)
@@ -719,11 +881,18 @@ public sealed class BookingRepository : IBookingRepository
         IReadOnlyList<BookingSlotLockWrite> slotLocks,
         CancellationToken cancellationToken)
     {
+        var staleSlotLockRefs = new List<DocumentReference>();
         foreach (var slotLock in slotLocks)
         {
             var snapshot = await transaction.GetSnapshotAsync(slotLock.Reference, cancellationToken);
             if (snapshot.Exists)
             {
+                if (await IsCancelledSlotLockAsync(transaction, snapshot, cancellationToken))
+                {
+                    staleSlotLockRefs.Add(slotLock.Reference);
+                    continue;
+                }
+
                 throw new BookingWriteConflictException(
                     slotLock.CourtId,
                     slotLock.Date,
@@ -731,6 +900,29 @@ public sealed class BookingRepository : IBookingRepository
                     slotLock.EndTime);
             }
         }
+
+        foreach (var staleSlotLockRef in staleSlotLockRefs)
+        {
+            transaction.Delete(staleSlotLockRef);
+        }
+    }
+
+    private async Task<bool> IsCancelledSlotLockAsync(
+        Transaction transaction,
+        DocumentSnapshot slotLockSnapshot,
+        CancellationToken cancellationToken)
+    {
+        var orderId = GetString(slotLockSnapshot, "orderId");
+        if (string.IsNullOrWhiteSpace(orderId))
+        {
+            return false;
+        }
+
+        var orderSnapshot = await transaction.GetSnapshotAsync(
+            _firestoreDb.Collection("orders").Document(orderId),
+            cancellationToken);
+        return orderSnapshot.Exists
+            && string.Equals(GetString(orderSnapshot, "status"), OrderStatuses.Cancelled, StringComparison.OrdinalIgnoreCase);
     }
 
     private static void SetSlotLocks(
@@ -1046,9 +1238,13 @@ public sealed class BookingRepository : IBookingRepository
 
     private static string GetString(DocumentSnapshot snapshot, string field)
     {
-        return snapshot.ContainsField(field)
-            ? snapshot.GetValue<string>(field)
-            : string.Empty;
+        if (!snapshot.Exists || !snapshot.ContainsField(field))
+        {
+            return string.Empty;
+        }
+
+        var value = snapshot.GetValue<object>(field);
+        return value?.ToString() ?? string.Empty;
     }
 
     private static bool GetBool(DocumentSnapshot snapshot, string field)

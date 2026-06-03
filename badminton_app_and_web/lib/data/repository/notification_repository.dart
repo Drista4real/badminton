@@ -17,7 +17,10 @@ class NotificationRepository {
         .limit(100)
         .snapshots()
         .map((snapshot) {
-          final items = snapshot.docs.map(_notificationFromSnapshot).toList();
+          final items = snapshot.docs
+              .map(_notificationFromSnapshot)
+              .where((item) => !item.id.startsWith('fixed_booking_created_'))
+              .toList();
           items.sort((left, right) {
             final leftDate = left.createdAt;
             final rightDate = right.createdAt;

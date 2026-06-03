@@ -38,13 +38,14 @@ class PaymentRepository {
     }
 
     try {
-      final response = await _apiClient.postJson('/api/payment/apply-benefits', {
-        'orderId': trimmedOrderId,
-        'originalAmount': originalAmount,
-        'useWallet': useWallet,
-        'usePoints': usePoints,
-        'bookingIds': bookingIds,
-      });
+      final response = await _apiClient
+          .postJson('/api/payment/apply-benefits', {
+            'orderId': trimmedOrderId,
+            'originalAmount': originalAmount,
+            'useWallet': useWallet,
+            'usePoints': usePoints,
+            'bookingIds': bookingIds,
+          });
 
       final body = _decodeBody(response.body);
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -283,6 +284,20 @@ class PaymentRepository {
     final trimmedOrderId = orderId.trim();
     if (trimmedUserId.isEmpty || trimmedOrderId.isEmpty) return;
 
+    try {
+      final response = await _apiClient.postJson(
+        '/api/payment/cancel-pending',
+        {'orderId': trimmedOrderId, 'bookingIds': bookingIds},
+      );
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return;
+      }
+    } catch (_) {
+      // Fall back to the legacy Firestore transaction below when the backend
+      // endpoint is not available yet.
+    }
+
     await _firestore.runTransaction((transaction) async {
       final userRef = _firestore.collection('users').doc(trimmedUserId);
       final orderRef = _firestore.collection('orders').doc(trimmedOrderId);
@@ -308,6 +323,14 @@ class PaymentRepository {
       final benefitsRefunded = orderData['appBenefitsRefunded'] == true;
       final shouldRefundBenefits =
           (walletDiscount > 0 || pointsSpent > 0) && !benefitsRefunded;
+      final resolvedBookingIds = _resolveBookingIds(orderData, bookingIds);
+      final bookingRefs = resolvedBookingIds
+          .map((bookingId) => _firestore.collection('bookings').doc(bookingId))
+          .toList();
+      final bookingSnapshots = <DocumentSnapshot<Map<String, dynamic>>>[];
+      for (final bookingRef in bookingRefs) {
+        bookingSnapshots.add(await transaction.get(bookingRef));
+      }
       final userSnapshot = shouldRefundBenefits
           ? await transaction.get(userRef)
           : null;
@@ -325,18 +348,20 @@ class PaymentRepository {
         if (shouldRefundBenefits) 'appBenefitsRefunded': true,
       }, SetOptions(merge: true));
 
-      for (final bookingId in _resolveBookingIds(orderData, bookingIds)) {
-        transaction.set(
-          _firestore.collection('bookings').doc(bookingId),
-          {
-            'status': 'cancelled',
-            'orderStatus': 'cancelled',
-            'paymentStatus': 'cancelled',
-            'cancelledReason': 'user_cancelled',
-            'cancelledAt': now,
-            'updatedAt': now,
-          },
-          SetOptions(merge: true),
+      for (final bookingRef in bookingRefs) {
+        transaction.set(bookingRef, {
+          'status': 'cancelled',
+          'orderStatus': 'cancelled',
+          'paymentStatus': 'cancelled',
+          'cancelledReason': 'user_cancelled',
+          'cancelledAt': now,
+          'updatedAt': now,
+        }, SetOptions(merge: true));
+      }
+
+      for (final slotLockId in _buildSlotLockIds(bookingSnapshots)) {
+        transaction.delete(
+          _firestore.collection('bookingSlotLocks').doc(slotLockId),
         );
       }
 
@@ -524,6 +549,72 @@ class PaymentRepository {
         .map((item) => item.trim())
         .where((item) => item.isNotEmpty)
         .toList();
+  }
+
+  static Iterable<String> _buildSlotLockIds(
+    Iterable<DocumentSnapshot<Map<String, dynamic>>> bookingSnapshots,
+  ) sync* {
+    final emitted = <String>{};
+    for (final bookingSnapshot in bookingSnapshots) {
+      final bookingData = bookingSnapshot.data();
+      if (bookingData == null) continue;
+
+      final courtId = bookingData['courtId']?.toString() ?? '';
+      final date = _dateOnly(bookingData['date']);
+      final startTime = _intValue(bookingData['startTime']);
+      final endTime = _intValue(bookingData['endTime']);
+      if (courtId.trim().isEmpty ||
+          date == null ||
+          startTime >= endTime ||
+          startTime < 0) {
+        continue;
+      }
+
+      for (var slotStart = startTime; slotStart < endTime; slotStart += 30) {
+        final id =
+            '${_sanitizeDocumentId(courtId)}_${_formatDateId(date)}_${slotStart.toString().padLeft(4, '0')}';
+        if (emitted.add(id)) {
+          yield id;
+        }
+      }
+    }
+  }
+
+  static DateTime? _dateOnly(Object? value) {
+    DateTime? dateTime;
+    if (value is Timestamp) {
+      dateTime = value.toDate();
+    } else if (value is DateTime) {
+      dateTime = value;
+    } else if (value is String) {
+      dateTime = DateTime.tryParse(value);
+    }
+
+    if (dateTime == null) return null;
+    return DateTime(dateTime.year, dateTime.month, dateTime.day);
+  }
+
+  static String _formatDateId(DateTime date) {
+    return '${date.year.toString().padLeft(4, '0')}'
+        '${date.month.toString().padLeft(2, '0')}'
+        '${date.day.toString().padLeft(2, '0')}';
+  }
+
+  static String _sanitizeDocumentId(String value) {
+    final buffer = StringBuffer();
+    for (final codeUnit in value.trim().codeUnits) {
+      final isDigit = codeUnit >= 48 && codeUnit <= 57;
+      final isUpper = codeUnit >= 65 && codeUnit <= 90;
+      final isLower = codeUnit >= 97 && codeUnit <= 122;
+      final isDash = codeUnit == 45;
+      final isUnderscore = codeUnit == 95;
+      buffer.write(
+        isDigit || isUpper || isLower || isDash || isUnderscore
+            ? String.fromCharCode(codeUnit)
+            : '_',
+      );
+    }
+    return buffer.toString();
   }
 }
 

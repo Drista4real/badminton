@@ -99,7 +99,7 @@ public sealed class BookingController : ControllerBase
         {
             return StatusCode(StatusCodes.Status403Forbidden, new
             {
-                message = "Sân đang được bảo vệ. Bạn cần có ít nhất một đơn đã hoàn tất để đặt sân này.",
+                message = "Sân đang được bảo vệ. Bạn cần có ít nhất một đơn đã thanh toán thành công để đặt sân này.",
                 courtId = ex.CourtId,
             });
         }
@@ -169,7 +169,7 @@ public sealed class BookingController : ControllerBase
         {
             return StatusCode(StatusCodes.Status403Forbidden, new
             {
-                message = "Sân đang được bảo vệ. Bạn cần có ít nhất một đơn đã hoàn tất để đặt sân này.",
+                message = "Sân đang được bảo vệ. Bạn cần có ít nhất một đơn đã thanh toán thành công để đặt sân này.",
                 courtId = ex.CourtId,
             });
         }
@@ -243,7 +243,7 @@ public sealed class BookingController : ControllerBase
         {
             return StatusCode(StatusCodes.Status403Forbidden, new
             {
-                message = "Sân đang được bảo vệ. Bạn cần có ít nhất một đơn đã hoàn tất để đặt sân này.",
+                message = "Sân đang được bảo vệ. Bạn cần có ít nhất một đơn đã thanh toán thành công để đặt sân này.",
                 courtId = ex.CourtId,
             });
         }

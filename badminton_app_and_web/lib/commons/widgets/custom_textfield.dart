@@ -15,6 +15,9 @@ class CustomTextField extends StatelessWidget {
   final TextInputAction? textInputAction;
   final Iterable<String>? autofillHints;
   final ValueChanged<String>? onSubmitted;
+  final IconData? suffixIcon;
+  final VoidCallback? onSuffixTap;
+  final String? suffixSemanticLabel;
 
   const CustomTextField({
     super.key,
@@ -26,6 +29,9 @@ class CustomTextField extends StatelessWidget {
     this.textInputAction,
     this.autofillHints,
     this.onSubmitted,
+    this.suffixIcon,
+    this.onSuffixTap,
+    this.suffixSemanticLabel,
   });
 
   @override
@@ -47,9 +53,61 @@ class CustomTextField extends StatelessWidget {
           border: InputBorder.none,
           hintText: hint,
           prefixIcon: Icon(icon),
+          suffixIcon: suffixIcon == null
+              ? null
+              : IconButton(
+                  onPressed: onSuffixTap,
+                  tooltip: suffixSemanticLabel,
+                  icon: Icon(suffixIcon),
+                ),
           contentPadding: const EdgeInsets.symmetric(vertical: 18),
         ),
       ),
+    );
+  }
+}
+
+class CustomPasswordTextField extends StatefulWidget {
+  const CustomPasswordTextField({
+    super.key,
+    required this.controller,
+    required this.hint,
+    required this.icon,
+    this.textInputAction,
+    this.autofillHints,
+    this.onSubmitted,
+  });
+
+  final TextEditingController controller;
+  final String hint;
+  final IconData icon;
+  final TextInputAction? textInputAction;
+  final Iterable<String>? autofillHints;
+  final ValueChanged<String>? onSubmitted;
+
+  @override
+  State<CustomPasswordTextField> createState() =>
+      _CustomPasswordTextFieldState();
+}
+
+class _CustomPasswordTextFieldState extends State<CustomPasswordTextField> {
+  bool _obscure = true;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomTextField(
+      controller: widget.controller,
+      hint: widget.hint,
+      icon: widget.icon,
+      obscure: _obscure,
+      textInputAction: widget.textInputAction,
+      autofillHints: widget.autofillHints,
+      onSubmitted: widget.onSubmitted,
+      suffixIcon: _obscure
+          ? Icons.visibility_off_outlined
+          : Icons.visibility_outlined,
+      suffixSemanticLabel: _obscure ? 'Hiển thị mật khẩu' : 'Ẩn mật khẩu',
+      onSuffixTap: () => setState(() => _obscure = !_obscure),
     );
   }
 }

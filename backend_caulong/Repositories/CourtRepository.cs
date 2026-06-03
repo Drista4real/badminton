@@ -20,13 +20,12 @@ public sealed class CourtRepository : ICourtRepository
         CancellationToken cancellationToken = default)
     {
         var limit = NormalizeLimit(request.Limit, DefaultSearchLimit, MaxSearchLimit);
-        var canSeeProtectedCourts = await UserHasAnyCompletedOrderAsync(
+        var canSeeProtectedCourts = await UserHasAnyPaidOrderAsync(
             request.UserId,
             cancellationToken);
         var normalizedSearchText = NormalizeSearchText(request.SearchText);
         var snapshot = await _firestoreDb
             .Collection("courts")
-            .WhereEqualTo("status", CourtStatuses.Active)
             .GetSnapshotAsync(cancellationToken);
 
         return snapshot.Documents
@@ -58,7 +57,7 @@ public sealed class CourtRepository : ICourtRepository
         return new CourtDetailResult(ToApiDictionary(courtSnapshot));
     }
 
-    private async Task<bool> UserHasAnyCompletedOrderAsync(
+    private async Task<bool> UserHasAnyPaidOrderAsync(
         string? userId,
         CancellationToken cancellationToken)
     {
@@ -67,10 +66,26 @@ public sealed class CourtRepository : ICourtRepository
             return false;
         }
 
+        var trimmedUserId = userId.Trim();
+        return await UserHasAnyOrderWithStatusAsync(
+                trimmedUserId,
+                OrderStatuses.Confirmed,
+                cancellationToken)
+            || await UserHasAnyOrderWithStatusAsync(
+                trimmedUserId,
+                OrderStatuses.Completed,
+                cancellationToken);
+    }
+
+    private async Task<bool> UserHasAnyOrderWithStatusAsync(
+        string userId,
+        string status,
+        CancellationToken cancellationToken)
+    {
         var snapshot = await _firestoreDb
             .Collection("orders")
-            .WhereEqualTo("userId", userId.Trim())
-            .WhereEqualTo("status", OrderStatuses.Completed)
+            .WhereEqualTo("userId", userId)
+            .WhereEqualTo("status", status)
             .Limit(1)
             .GetSnapshotAsync(cancellationToken);
 
@@ -80,7 +95,15 @@ public sealed class CourtRepository : ICourtRepository
     private static bool IsSearchVisibleCourt(DocumentSnapshot document)
     {
         return GetBool(document, "isActive", defaultValue: true)
-            && !GetBool(document, "isMaintenance");
+            && !GetBool(document, "isMaintenance")
+            && IsVisibleCourtStatus(GetString(document, "status"));
+    }
+
+    private static bool IsVisibleCourtStatus(string status)
+    {
+        return string.IsNullOrWhiteSpace(status)
+            || string.Equals(status, CourtStatuses.Active, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, "available", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool MatchesSearchText(DocumentSnapshot document, string? normalizedSearchText)

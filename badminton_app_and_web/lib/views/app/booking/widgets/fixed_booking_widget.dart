@@ -31,7 +31,7 @@ class FixedBookingView extends GetView<BookingController> {
       return Stack(
         children: [
           SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 220),
             child: Column(
               children: [
                 const _FixedConfigCard(),
@@ -601,43 +601,130 @@ class _FixedPaymentBar extends GetView<BookingController> {
               ),
             ],
           ),
-          child: Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0FAF9),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFBFE9D7)),
+                ),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text(
-                      'Tổng tiền tạm tính',
-                      style: TextStyle(fontSize: 11, color: AppColors.grey),
+                    _FixedPaymentInfoRow(
+                      Icons.sports_tennis_rounded,
+                      'Sân',
+                      controller.selectedFixedCourtNames,
                     ),
-                    Text(
-                      controller.formatMoney(controller.fixedTotal),
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.primary,
-                      ),
+                    const SizedBox(height: 6),
+                    _FixedPaymentInfoRow(
+                      Icons.event_repeat_rounded,
+                      'Ngày chơi',
+                      '${controller.selectedWeekdaysLabel} • ${controller.fixedSessionCount} buổi',
+                    ),
+                    const SizedBox(height: 6),
+                    _FixedPaymentInfoRow(
+                      Icons.date_range_rounded,
+                      'Thời hạn',
+                      controller.fixedDateRangeLabel,
+                    ),
+                    const SizedBox(height: 6),
+                    _FixedPaymentInfoRow(
+                      Icons.schedule_rounded,
+                      'Giờ chơi',
+                      controller.fixedTimeRangeLabel,
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: CustomButton(
-                  text: controller.isSubmitting.value
-                      ? 'Đang tạo đơn...'
-                      : 'Thanh toán',
-                  onTap: controller.isSubmitting.value
-                      ? () {}
-                      : controller.submitFixedBooking,
-                ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'Tổng tiền tạm tính',
+                          style: TextStyle(fontSize: 11, color: AppColors.grey),
+                        ),
+                        Text(
+                          controller.formatMoney(controller.fixedTotal),
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: CustomButton(
+                      text: controller.isSubmitting.value
+                          ? 'Đang tạo đơn...'
+                          : 'Thanh toán',
+                      onTap: controller.isSubmitting.value
+                          ? () {}
+                          : controller.submitFixedBooking,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _FixedPaymentInfoRow extends StatelessWidget {
+  const _FixedPaymentInfoRow(this.icon, this.label, this.value);
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 14, color: AppColors.primary),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 66,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              color: AppColors.grey,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value.isEmpty ? '-' : value,
+            textAlign: TextAlign.right,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.black,
+              fontWeight: FontWeight.w700,
+              height: 1.25,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

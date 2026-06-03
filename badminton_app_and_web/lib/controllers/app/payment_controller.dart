@@ -128,19 +128,26 @@ class PaymentController extends GetxController {
 
   void toggleUseWallet(bool? value) {
     if (!canChangeBenefitOptions) return;
-    useWallet.value = value == true;
+    final shouldUseWallet = value == true;
+    if (shouldUseWallet && availableWalletBalance.value <= 0) {
+      useWallet.value = false;
+      _showEmptyWalletMessage();
+      return;
+    }
+
+    useWallet.value = shouldUseWallet;
   }
 
   void toggleUseRewardPoints(bool? value) {
     if (!canChangeBenefitOptions) return;
-    useRewardPoints.value = value == true;
-    if (useRewardPoints.value && rewardPoints.value < 100) {
-      Get.snackbar(
-        'Chưa đủ điểm',
-        'Bạn cần tối thiểu 100 điểm để dùng điểm tích lũy.',
-        snackPosition: SnackPosition.BOTTOM,
-      );
+    final shouldUseRewardPoints = value == true;
+    if (shouldUseRewardPoints && rewardPoints.value < 100) {
+      useRewardPoints.value = false;
+      _showInsufficientRewardPointsMessage();
+      return;
     }
+
+    useRewardPoints.value = shouldUseRewardPoints;
   }
 
   Future<void> preparePayment() async {
@@ -149,6 +156,16 @@ class PaymentController extends GetxController {
         orderId.isEmpty ||
         isLoading.value ||
         isPaymentPrepared.value) {
+      return;
+    }
+
+    if (useWallet.value && availableWalletBalance.value <= 0) {
+      _showEmptyWalletMessage();
+      return;
+    }
+
+    if (useRewardPoints.value && rewardPoints.value < 100) {
+      _showInsufficientRewardPointsMessage();
       return;
     }
 
@@ -382,6 +399,22 @@ class PaymentController extends GetxController {
     }
 
     return user.uid;
+  }
+
+  void _showEmptyWalletMessage() {
+    Get.snackbar(
+      'Ví tiền không đủ',
+      'Số dư ví tiền hiện tại bằng 0. Vui lòng bỏ chọn ví tiền để tạo mã QR.',
+      snackPosition: SnackPosition.BOTTOM,
+    );
+  }
+
+  void _showInsufficientRewardPointsMessage() {
+    Get.snackbar(
+      'Chưa đủ điểm',
+      'Bạn cần tối thiểu 100 điểm để dùng điểm tích lũy.',
+      snackPosition: SnackPosition.BOTTOM,
+    );
   }
 
   @override

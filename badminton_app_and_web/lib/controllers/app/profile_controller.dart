@@ -11,7 +11,7 @@ import '../../data/repository/auth_repository.dart';
 import '../../data/repository/user_repository.dart';
 import '../../routes/app_routes.dart';
 
-class ProfileController extends GetxController {
+class ProfileController extends GetxController with WidgetsBindingObserver {
   ProfileController({
     required AuthRepository authRepository,
     required UserRepository userRepository,
@@ -47,11 +47,14 @@ class ProfileController extends GetxController {
   StreamSubscription<UserModel?>? _userSubscription;
   Timer? _passwordVerificationCooldownTimer;
   Timer? _passwordVerificationExpiryTimer;
+  Timer? _passwordVerificationPollTimer;
   DateTime? _passwordVerificationExpiresAt;
+  bool _isCheckingPasswordVerification = false;
 
   @override
   void onInit() {
     super.onInit();
+    WidgetsBinding.instance.addObserver(this);
     _syncSettingsPreference();
     _watchUserProfile();
   }
@@ -91,6 +94,7 @@ class ProfileController extends GetxController {
   }
 
   bool get canSendPasswordVerification =>
+      !isPasswordChangeVerified.value &&
       passwordVerificationCooldownSecondsLeft.value == 0 &&
       !isPasswordVerificationLoading.value;
 
@@ -109,6 +113,14 @@ class ProfileController extends GetxController {
     final minutes = seconds ~/ 60;
     final remainder = (seconds % 60).toString().padLeft(2, '0');
     return '$minutes:$remainder';
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        Get.currentRoute == AppRoutes.changePassword) {
+      startPasswordChangeVerificationMonitor();
+    }
   }
 
   void syncProfileForm() {
@@ -202,6 +214,11 @@ class ProfileController extends GetxController {
   Future<void> sendPasswordChangeVerification() async {
     if (!canSendPasswordVerification) return;
 
+    if (_authRepository.currentUser?.emailVerified == true) {
+      _markPasswordChangeVerified();
+      return;
+    }
+
     final email = passwordVerificationEmail;
     if (email.isEmpty) {
       _showError('Tài khoản chưa có email để gửi link xác thực.');
@@ -214,6 +231,7 @@ class ProfileController extends GetxController {
       isPasswordChangeVerified.value = false;
       _startPasswordVerificationWindow();
       _startPasswordVerificationCooldown();
+      _startPasswordVerificationPolling();
 
       Get.snackbar(
         'Đã gửi link xác thực',
@@ -230,35 +248,14 @@ class ProfileController extends GetxController {
   }
 
   Future<void> confirmPasswordChangeVerification() async {
-    if (!hasActivePasswordVerificationWindow) {
+    if (!hasActivePasswordVerificationWindow &&
+        !isPasswordChangeVerified.value) {
       isPasswordChangeVerified.value = false;
       _showError('Link xác thực đã hết hạn. Vui lòng gửi lại link mới.');
       return;
     }
 
-    isPasswordVerificationLoading.value = true;
-    try {
-      final currentUser = await _authRepository.reloadCurrentUser();
-      if (currentUser?.emailVerified != true) {
-        _showError(
-          'Email chưa được xác minh. Hãy mở link trong Gmail rồi thử lại.',
-        );
-        return;
-      }
-
-      isPasswordChangeVerified.value = true;
-      Get.snackbar(
-        'Đã xác thực',
-        'Bạn có thể đổi mật khẩu trong thời gian link còn hiệu lực.',
-        snackPosition: SnackPosition.BOTTOM,
-      );
-    } on FirebaseAuthException catch (error) {
-      _showError(_firebaseMessage(error));
-    } catch (_) {
-      _showError('Không thể kiểm tra trạng thái xác thực.');
-    } finally {
-      isPasswordVerificationLoading.value = false;
-    }
+    await checkPasswordChangeVerification(silent: false);
   }
 
   Future<bool> changePassword({
@@ -267,8 +264,7 @@ class ProfileController extends GetxController {
     required String confirmPassword,
   }) async {
     if (isChangingPassword.value) return false;
-    if (!isPasswordChangeVerified.value ||
-        !hasActivePasswordVerificationWindow) {
+    if (!isPasswordChangeVerified.value) {
       _showError('Vui lòng xác thực Gmail trước khi đổi mật khẩu.');
       return false;
     }
@@ -307,6 +303,72 @@ class ProfileController extends GetxController {
       return false;
     } finally {
       isChangingPassword.value = false;
+    }
+  }
+
+  void startPasswordChangeVerificationMonitor() {
+    if (_authRepository.currentUser?.emailVerified == true) {
+      _markPasswordChangeVerified();
+      return;
+    }
+
+    checkPasswordChangeVerification(silent: true);
+    if (hasActivePasswordVerificationWindow) {
+      _startPasswordVerificationPolling();
+    }
+  }
+
+  void stopPasswordChangeVerificationMonitor() {
+    _stopPasswordVerificationPolling();
+  }
+
+  Future<void> checkPasswordChangeVerification({bool silent = false}) async {
+    if (_isCheckingPasswordVerification) return;
+
+    _isCheckingPasswordVerification = true;
+    if (!silent) {
+      isPasswordVerificationLoading.value = true;
+    }
+
+    try {
+      final currentUser = await _authRepository.reloadCurrentUser();
+      if (currentUser == null) {
+        _clearPasswordVerification();
+        Get.offAllNamed(AppRoutes.login);
+        return;
+      }
+
+      if (currentUser.emailVerified) {
+        final wasVerified = isPasswordChangeVerified.value;
+        _markPasswordChangeVerified();
+        if (!silent && !wasVerified) {
+          Get.snackbar(
+            'Đã xác thực',
+            'Bạn có thể cập nhật mật khẩu.',
+            snackPosition: SnackPosition.BOTTOM,
+          );
+        }
+        return;
+      }
+
+      if (!silent) {
+        _showError(
+          'Email chưa được xác minh. Hãy mở link trong Gmail rồi thử lại.',
+        );
+      }
+    } on FirebaseAuthException catch (error) {
+      if (!silent) {
+        _showError(_firebaseMessage(error));
+      }
+    } catch (_) {
+      if (!silent) {
+        _showError('Không thể kiểm tra trạng thái xác thực.');
+      }
+    } finally {
+      _isCheckingPasswordVerification = false;
+      if (!silent) {
+        isPasswordVerificationLoading.value = false;
+      }
     }
   }
 
@@ -396,10 +458,10 @@ class ProfileController extends GetxController {
 
         final secondsLeft = expiresAt.difference(DateTime.now()).inSeconds;
         if (secondsLeft <= 0) {
-          isPasswordChangeVerified.value = false;
           passwordVerificationExpiresSecondsLeft.value = 0;
           _passwordVerificationExpiresAt = null;
           timer.cancel();
+          _stopPasswordVerificationPolling();
           return;
         }
 
@@ -408,12 +470,40 @@ class ProfileController extends GetxController {
     );
   }
 
+  void _startPasswordVerificationPolling() {
+    _passwordVerificationPollTimer ??= Timer.periodic(
+      const Duration(seconds: 2),
+      (_) => checkPasswordChangeVerification(silent: true),
+    );
+  }
+
+  void _stopPasswordVerificationPolling() {
+    _passwordVerificationPollTimer?.cancel();
+    _passwordVerificationPollTimer = null;
+  }
+
+  void _markPasswordChangeVerified() {
+    isPasswordChangeVerified.value = true;
+    passwordVerificationCooldownSecondsLeft.value = 0;
+    passwordVerificationExpiresSecondsLeft.value = 0;
+    _passwordVerificationExpiresAt = null;
+    _passwordVerificationCooldownTimer?.cancel();
+    _passwordVerificationCooldownTimer = null;
+    _passwordVerificationExpiryTimer?.cancel();
+    _passwordVerificationExpiryTimer = null;
+    _stopPasswordVerificationPolling();
+  }
+
   void _clearPasswordVerification() {
     isPasswordChangeVerified.value = false;
     passwordVerificationExpiresSecondsLeft.value = 0;
     _passwordVerificationExpiresAt = null;
+    _passwordVerificationCooldownTimer?.cancel();
+    _passwordVerificationCooldownTimer = null;
+    passwordVerificationCooldownSecondsLeft.value = 0;
     _passwordVerificationExpiryTimer?.cancel();
     _passwordVerificationExpiryTimer = null;
+    _stopPasswordVerificationPolling();
   }
 
   String _firebaseMessage(FirebaseAuthException error) {
@@ -448,9 +538,11 @@ class ProfileController extends GetxController {
 
   @override
   void onClose() {
+    WidgetsBinding.instance.removeObserver(this);
     _userSubscription?.cancel();
     _passwordVerificationCooldownTimer?.cancel();
     _passwordVerificationExpiryTimer?.cancel();
+    _passwordVerificationPollTimer?.cancel();
     profileNameController.dispose();
     profilePhoneController.dispose();
     profileEmailController.dispose();

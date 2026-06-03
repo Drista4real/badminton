@@ -15,6 +15,8 @@ public sealed class PaymentController : ControllerBase
     private readonly IVietQrService _vietQrService;
     private readonly ISePayTransactionLookupService _sePayTransactionLookupService;
     private readonly IOrderRepository _orderRepository;
+    private readonly IBookingNotificationService _bookingNotificationService;
+    private readonly ICancellationPolicyService _cancellationPolicyService;
     private readonly FirestoreDb _firestoreDb;
     private readonly IWebHostEnvironment _environment;
     private readonly IConfiguration _configuration;
@@ -24,6 +26,8 @@ public sealed class PaymentController : ControllerBase
         IVietQrService vietQrService,
         ISePayTransactionLookupService sePayTransactionLookupService,
         IOrderRepository orderRepository,
+        IBookingNotificationService bookingNotificationService,
+        ICancellationPolicyService cancellationPolicyService,
         FirestoreDb firestoreDb,
         IWebHostEnvironment environment,
         IConfiguration configuration,
@@ -32,6 +36,8 @@ public sealed class PaymentController : ControllerBase
         _vietQrService = vietQrService;
         _sePayTransactionLookupService = sePayTransactionLookupService;
         _orderRepository = orderRepository;
+        _bookingNotificationService = bookingNotificationService;
+        _cancellationPolicyService = cancellationPolicyService;
         _firestoreDb = firestoreDb;
         _environment = environment;
         _configuration = configuration;
@@ -66,6 +72,13 @@ public sealed class PaymentController : ControllerBase
                 userId,
                 request,
                 cancellationToken);
+
+            if (result.IsFullyPaid)
+            {
+                await NotifyFixedBookingConfirmedAsync(
+                    request.OrderId.Trim(),
+                    cancellationToken);
+            }
 
             return Ok(result);
         }
@@ -176,6 +189,66 @@ public sealed class PaymentController : ControllerBase
         {
             _logger.LogError(ex, "Unexpected error while generating payment QR for order {OrderId}.", request.OrderId);
             return StatusCode(StatusCodes.Status500InternalServerError, new { message = "Could not generate payment QR." });
+        }
+    }
+
+    [HttpPost("cancel-pending")]
+    [Authorize(AuthenticationSchemes = FirebaseAuthenticationHandler.SchemeName)]
+    public async Task<IActionResult> CancelPendingPayment(
+        [FromBody] CancelPendingPaymentRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null)
+        {
+            return BadRequest(new { message = "Request body is required." });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.OrderId))
+        {
+            return BadRequest(new { message = "orderId is required." });
+        }
+
+        try
+        {
+            var userId = User.GetFirebaseUserId();
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return Unauthorized(new { message = "Authenticated Firebase user id is required." });
+            }
+
+            var result = await CancelPendingPaymentAsync(
+                userId,
+                request,
+                cancellationToken);
+
+            await DeletePendingFixedBookingNotificationAsync(
+                request.OrderId.Trim(),
+                cancellationToken);
+
+            return Ok(new
+            {
+                orderId = result.OrderId,
+                bookingIds = result.BookingIds,
+                cancelled = result.Cancelled,
+                status = result.Status,
+                refundedWalletAmount = result.RefundedWalletAmount,
+                refundedPoints = result.RefundedPoints,
+            });
+        }
+        catch (OrderNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (OrderForbiddenException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Could not cancel pending payment for order {OrderId}.", request.OrderId);
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                new { message = "Could not cancel pending payment." });
         }
     }
 
@@ -290,6 +363,11 @@ public sealed class PaymentController : ControllerBase
                 order.Id,
                 result.Action);
 
+            if (result.Action is OrderPaymentWriteAction.Confirmed or OrderPaymentWriteAction.AlreadyProcessed)
+            {
+                await NotifyFixedBookingConfirmedAsync(order.Id, cancellationToken);
+            }
+
             return Ok(new
             {
                 orderId = order.Id,
@@ -393,6 +471,13 @@ public sealed class PaymentController : ControllerBase
                         : request.TransactionId.Trim(),
                     null),
                 cancellationToken);
+
+            if (result.Action is OrderPaymentWriteAction.Confirmed or OrderPaymentWriteAction.AlreadyProcessed)
+            {
+                await NotifyFixedBookingConfirmedAsync(
+                    request.OrderId.Trim(),
+                    cancellationToken);
+            }
 
             return Ok(new
             {
@@ -655,6 +740,170 @@ public sealed class PaymentController : ControllerBase
         return result ?? throw new InvalidOperationException("Could not apply payment benefits.");
     }
 
+    private async Task<CancelPendingPaymentResult> CancelPendingPaymentAsync(
+        string userId,
+        CancelPendingPaymentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var trimmedUserId = userId.Trim();
+        var trimmedOrderId = request.OrderId.Trim();
+        var userRef = _firestoreDb.Collection("users").Document(trimmedUserId);
+        var orderRef = _firestoreDb.Collection("orders").Document(trimmedOrderId);
+        CancelPendingPaymentResult? result = null;
+
+        await _firestoreDb.RunTransactionAsync(async transaction =>
+        {
+            var orderSnapshot = await transaction.GetSnapshotAsync(orderRef, cancellationToken);
+            if (!orderSnapshot.Exists)
+            {
+                throw new OrderNotFoundException(trimmedOrderId);
+            }
+
+            if (!string.Equals(GetString(orderSnapshot, "userId"), trimmedUserId, StringComparison.Ordinal))
+            {
+                throw new OrderForbiddenException(trimmedOrderId);
+            }
+
+            var bookingSnapshots = await GetOrderBookingSnapshotsAsync(
+                transaction,
+                orderSnapshot,
+                request.BookingIds,
+                cancellationToken);
+            var bookingIds = bookingSnapshots
+                .Where(snapshot => snapshot.Exists)
+                .Select(snapshot => snapshot.Reference.Id)
+                .ToArray();
+
+            var status = GetString(orderSnapshot, "status");
+            if (string.Equals(status, OrderStatuses.Cancelled, StringComparison.OrdinalIgnoreCase))
+            {
+                var now = Timestamp.FromDateTime(DateTime.UtcNow);
+                MarkBookingsCancelled(transaction, bookingSnapshots, "cancelled", now);
+                DeleteBookingSlotLocks(transaction, bookingSnapshots);
+                result = new CancelPendingPaymentResult(
+                    trimmedOrderId,
+                    bookingIds,
+                    false,
+                    OrderStatuses.Cancelled,
+                    0,
+                    0);
+                return;
+            }
+
+            if (!string.Equals(status, OrderStatuses.Pending, StringComparison.OrdinalIgnoreCase))
+            {
+                result = new CancelPendingPaymentResult(
+                    trimmedOrderId,
+                    bookingIds,
+                    false,
+                    status,
+                    0,
+                    0);
+                return;
+            }
+
+            var walletDiscount = NormalizeMoneyToDouble(GetDouble(orderSnapshot, "appWalletDiscount"));
+            var pointsSpent = GetInt(orderSnapshot, "appPointsSpent");
+            var shouldRefundBenefits =
+                (walletDiscount > 0 || pointsSpent > 0)
+                && !GetBool(orderSnapshot, "appBenefitsRefunded");
+            var userSnapshot = shouldRefundBenefits
+                ? await transaction.GetSnapshotAsync(userRef, cancellationToken)
+                : null;
+            var canRefundBenefits = shouldRefundBenefits && userSnapshot?.Exists == true;
+            var nowUtc = DateTime.UtcNow;
+            var cancelledAt = Timestamp.FromDateTime(nowUtc);
+
+            await _cancellationPolicyService.ApplyCancellationAsync(
+                transaction,
+                new CancellationPolicyRequest(
+                    trimmedUserId,
+                    bookingSnapshots,
+                    nowUtc,
+                    cancelledAt),
+                cancellationToken);
+
+            transaction.Set(orderRef, new Dictionary<string, object>
+            {
+                ["status"] = OrderStatuses.Cancelled,
+                ["orderStatus"] = OrderStatuses.Cancelled,
+                ["paymentStatus"] = "cancelled",
+                ["cancelledReason"] = "user_cancelled",
+                ["cancelledAt"] = cancelledAt,
+                ["updatedAt"] = cancelledAt,
+                ["appBenefitsRefunded"] = canRefundBenefits,
+            }, SetOptions.MergeAll);
+
+            MarkBookingsCancelled(transaction, bookingSnapshots, "cancelled", cancelledAt);
+            DeleteBookingSlotLocks(transaction, bookingSnapshots);
+
+            var refundedWalletAmount = 0d;
+            var refundedPoints = 0;
+            if (canRefundBenefits)
+            {
+                var refundUserSnapshot = userSnapshot!;
+                if (walletDiscount > 0)
+                {
+                    var walletBalance = NormalizeMoneyToDouble(GetDouble(refundUserSnapshot, "walletBalance"));
+                    var pendingWithdrawal = Math.Max(0d, NormalizeMoneyToDouble(GetDouble(refundUserSnapshot, "pendingWithdrawal")));
+                    var newWalletBalance = NormalizeMoneyToDouble(walletBalance + walletDiscount);
+                    transaction.Set(userRef, new Dictionary<string, object>
+                    {
+                        ["walletBalance"] = newWalletBalance,
+                        ["availableBalance"] = NormalizeMoneyToDouble(newWalletBalance - pendingWithdrawal),
+                        ["updatedAt"] = cancelledAt,
+                    }, SetOptions.MergeAll);
+
+                    var walletTransactionRef = _firestoreDb
+                        .Collection("walletTransactions")
+                        .Document($"refund_{SanitizeDocumentId(trimmedOrderId)}_app_benefits");
+                    transaction.Set(walletTransactionRef, new WalletTransactionDocument
+                    {
+                        UserId = trimmedUserId,
+                        Amount = walletDiscount,
+                        Type = "refund",
+                        Status = WalletTransactionStatuses.Completed,
+                        Description = "Hoàn ví do hủy đơn chưa thanh toán",
+                        SourceOrderId = trimmedOrderId,
+                        Provider = "app_wallet",
+                        CreatedAt = cancelledAt,
+                    }, SetOptions.MergeAll);
+
+                    refundedWalletAmount = walletDiscount;
+                }
+
+                if (pointsSpent > 0)
+                {
+                    var currentPoints = GetInt(refundUserSnapshot, "points");
+                    if (currentPoints <= 0)
+                    {
+                        currentPoints = GetInt(refundUserSnapshot, "loyaltyPoints");
+                    }
+
+                    var nextPoints = currentPoints + pointsSpent;
+                    transaction.Set(userRef, new Dictionary<string, object>
+                    {
+                        ["points"] = nextPoints,
+                        ["loyaltyPoints"] = nextPoints,
+                        ["updatedAt"] = cancelledAt,
+                    }, SetOptions.MergeAll);
+
+                    refundedPoints = pointsSpent;
+                }
+            }
+
+            result = new CancelPendingPaymentResult(
+                trimmedOrderId,
+                bookingIds,
+                true,
+                OrderStatuses.Cancelled,
+                refundedWalletAmount,
+                refundedPoints);
+        }, cancellationToken: cancellationToken);
+
+        return result ?? throw new InvalidOperationException("Could not cancel pending payment.");
+    }
+
     private async Task<IReadOnlyList<DocumentSnapshot>> GetOrderBookingSnapshotsAsync(
         Transaction transaction,
         DocumentSnapshot orderSnapshot,
@@ -717,6 +966,74 @@ public sealed class PaymentController : ControllerBase
                 ["status"] = status,
                 ["updatedAt"] = now,
             }, SetOptions.MergeAll);
+        }
+    }
+
+    private async Task NotifyFixedBookingConfirmedAsync(
+        string orderId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _bookingNotificationService.NotifyFixedBookingConfirmedAsync(
+                orderId,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Confirmed payment for order {OrderId}, but could not write fixed booking notification.",
+                orderId);
+        }
+    }
+
+    private async Task DeletePendingFixedBookingNotificationAsync(
+        string orderId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _bookingNotificationService.DeletePendingFixedBookingNotificationAsync(
+                orderId,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Could not delete pending fixed booking notification for order {OrderId}.",
+                orderId);
+        }
+    }
+
+    private static void MarkBookingsCancelled(
+        Transaction transaction,
+        IEnumerable<DocumentSnapshot> bookingSnapshots,
+        string paymentStatus,
+        Timestamp now)
+    {
+        foreach (var bookingSnapshot in bookingSnapshots.Where(snapshot => snapshot.Exists))
+        {
+            transaction.Set(bookingSnapshot.Reference, new Dictionary<string, object>
+            {
+                ["status"] = BookingStatuses.Cancelled,
+                ["orderStatus"] = OrderStatuses.Cancelled,
+                ["paymentStatus"] = paymentStatus,
+                ["cancelledReason"] = "user_cancelled",
+                ["cancelledAt"] = now,
+                ["updatedAt"] = now,
+            }, SetOptions.MergeAll);
+        }
+    }
+
+    private void DeleteBookingSlotLocks(
+        Transaction transaction,
+        IEnumerable<DocumentSnapshot> bookingSnapshots)
+    {
+        foreach (var slotLockRef in BuildSlotLockRefs(bookingSnapshots))
+        {
+            transaction.Delete(slotLockRef);
         }
     }
 
@@ -831,6 +1148,18 @@ public sealed class PaymentController : ControllerBase
         double PointDiscount,
         int PointsSpent,
         bool IsFullyPaid);
+
+    public sealed record CancelPendingPaymentRequest(
+        string OrderId,
+        IReadOnlyList<string>? BookingIds);
+
+    private sealed record CancelPendingPaymentResult(
+        string OrderId,
+        IReadOnlyList<string> BookingIds,
+        bool Cancelled,
+        string Status,
+        double RefundedWalletAmount,
+        int RefundedPoints);
 
     public sealed record ReconcilePaymentRequest(string OrderId);
 

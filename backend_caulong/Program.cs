@@ -41,6 +41,7 @@ builder.Services.AddAuthorization();
 builder.Services.AddScoped<IBookingTransactionService, BookingTransactionService>();
 builder.Services.AddScoped<IWalletService, WalletService>();
 builder.Services.AddScoped<IRewardPointService, RewardPointService>();
+builder.Services.AddScoped<IBookingNotificationService, BookingNotificationService>();
 builder.Services.AddScoped<IFinancialNotificationService, FinancialNotificationService>();
 builder.Services.AddScoped<ICancellationPolicyService, CancellationPolicyService>();
 builder.Services.AddScoped<IBookingRepository, BookingRepository>();

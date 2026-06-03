@@ -32,6 +32,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   void initState() {
     super.initState();
     _profileController = Get.find<ProfileController>();
+    _profileController.startPasswordChangeVerificationMonitor();
     _newPasswordController.addListener(_checkPasswordStrength);
   }
 
@@ -56,6 +57,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
 
   @override
   void dispose() {
+    _profileController.stopPasswordChangeVerificationMonitor();
     _currentPasswordController.dispose();
     _newPasswordController.dispose();
     _confirmPasswordController.dispose();
@@ -165,7 +167,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
           _profileController.passwordVerificationCooldownSecondsLeft.value;
       final expiresIn =
           _profileController.passwordVerificationExpiresSecondsLeft.value;
-      final hasActiveWindow = expiresIn > 0;
+      final hasActiveWindow = !isVerified && expiresIn > 0;
 
       return Container(
         padding: const EdgeInsets.all(16),
@@ -218,8 +220,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                       const SizedBox(height: 4),
                       Text(
                         isVerified
-                            ? 'Bạn có thể cập nhật mật khẩu khi phiên xác thực còn hiệu lực.'
-                            : 'Gửi link xác thực đến ${_profileController.passwordVerificationEmail}, mở link trong Gmail rồi quay lại xác nhận.',
+                            ? 'Gmail đã được xác minh. Bạn có thể cập nhật mật khẩu.'
+                            : 'Gửi link xác thực đến ${_profileController.passwordVerificationEmail}, mở link trong Gmail rồi quay lại app. Hệ thống sẽ tự kiểm tra.',
                         style: const TextStyle(
                           fontSize: 12,
                           color: AppColors.grey,
@@ -263,42 +265,36 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                 ),
               ),
             ],
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 10,
-              runSpacing: 8,
-              children: [
-                OutlinedButton.icon(
-                  onPressed:
-                      _profileController.canSendPasswordVerification &&
-                          !isLoading
-                      ? _profileController.sendPasswordChangeVerification
-                      : null,
-                  icon: isLoading && cooldown == 0
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.send_outlined, size: 16),
-                  label: Text(
-                    cooldown > 0
-                        ? 'Gửi lại sau ${cooldown}s'
-                        : hasActiveWindow
-                        ? 'Gửi lại link'
-                        : 'Gửi link xác thực',
+            if (!isVerified) ...[
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 10,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed:
+                        _profileController.canSendPasswordVerification &&
+                            !isLoading
+                        ? _profileController.sendPasswordChangeVerification
+                        : null,
+                    icon: isLoading && cooldown == 0
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.send_outlined, size: 16),
+                    label: Text(
+                      cooldown > 0
+                          ? 'Gửi lại sau ${cooldown}s'
+                          : hasActiveWindow
+                          ? 'Gửi lại link'
+                          : 'Gửi link xác thực',
+                    ),
                   ),
-                ),
-                if (hasActiveWindow && !isVerified)
-                  ElevatedButton.icon(
-                    onPressed: isLoading
-                        ? null
-                        : _profileController.confirmPasswordChangeVerification,
-                    icon: const Icon(Icons.check_circle_outline, size: 16),
-                    label: const Text('Tôi đã xác minh'),
-                  ),
-              ],
-            ),
+                ],
+              ),
+            ],
           ],
         ),
       );

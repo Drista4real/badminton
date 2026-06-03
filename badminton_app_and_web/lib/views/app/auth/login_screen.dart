@@ -73,11 +73,10 @@ class LoginScreen extends GetView<AuthController> {
                     textInputAction: TextInputAction.next,
                     autofillHints: const [AutofillHints.email],
                   ),
-                  CustomTextField(
+                  CustomPasswordTextField(
                     controller: controller.loginPasswordController,
                     hint: 'Mật khẩu',
                     icon: Icons.lock_outline,
-                    obscure: true,
                     textInputAction: TextInputAction.done,
                     autofillHints: const [AutofillHints.password],
                     onSubmitted: (_) => controller.signInWithEmailAndPassword(),

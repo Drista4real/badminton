@@ -17,6 +17,7 @@ public sealed class WebhookController : ControllerBase
     private readonly IOrderRepository _orderRepository;
     private readonly IWalletService _walletService;
     private readonly IFinancialNotificationService _financialNotificationService;
+    private readonly IBookingNotificationService _bookingNotificationService;
     private readonly IConfiguration _configuration;
     private readonly ILogger<WebhookController> _logger;
 
@@ -24,12 +25,14 @@ public sealed class WebhookController : ControllerBase
         IOrderRepository orderRepository,
         IWalletService walletService,
         IFinancialNotificationService financialNotificationService,
+        IBookingNotificationService bookingNotificationService,
         IConfiguration configuration,
         ILogger<WebhookController> logger)
     {
         _orderRepository = orderRepository;
         _walletService = walletService;
         _financialNotificationService = financialNotificationService;
+        _bookingNotificationService = bookingNotificationService;
         _configuration = configuration;
         _logger = logger;
     }
@@ -110,6 +113,10 @@ public sealed class WebhookController : ControllerBase
                 payload.TransactionId,
                 payload.Provider,
                 cancellationToken);
+        }
+        else if (result.Action is OrderPaymentWriteAction.Confirmed or OrderPaymentWriteAction.AlreadyProcessed)
+        {
+            await NotifyFixedBookingConfirmedAsync(payload.OrderId, cancellationToken);
         }
 
         return Ok(new
@@ -232,6 +239,10 @@ public sealed class WebhookController : ControllerBase
                     "sepay",
                     cancellationToken);
             }
+            else if (result.Action is OrderPaymentWriteAction.Confirmed or OrderPaymentWriteAction.AlreadyProcessed)
+            {
+                await NotifyFixedBookingConfirmedAsync(orderId, cancellationToken);
+            }
 
             _logger.LogInformation(
                 "Processed SePay webhook {SePayTransactionId} for order {OrderId}. Action={Action}",
@@ -346,6 +357,25 @@ public sealed class WebhookController : ControllerBase
             _logger.LogWarning(
                 ex,
                 "Refunded late payment for order {OrderId}, but could not send refund notification.",
+                orderId);
+        }
+    }
+
+    private async Task NotifyFixedBookingConfirmedAsync(
+        string orderId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _bookingNotificationService.NotifyFixedBookingConfirmedAsync(
+                orderId,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Confirmed payment for order {OrderId}, but could not write fixed booking notification.",
                 orderId);
         }
     }
