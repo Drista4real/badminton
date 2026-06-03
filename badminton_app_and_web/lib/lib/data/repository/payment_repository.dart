@@ -1,0 +1,595 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:math' as math;
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import '../models/wallet_transaction_model.dart';
+import '../network/api_client.dart';
+
+class PaymentRepository {
+  PaymentRepository({FirebaseFirestore? firestore, ApiClient? apiClient})
+    : _firestore = firestore ?? FirebaseFirestore.instance,
+      _apiClient = apiClient ?? ApiClient.instance;
+
+  final FirebaseFirestore _firestore;
+  final ApiClient _apiClient;
+
+  Stream<WalletSummary> watchWalletSummary(String userId) {
+    return _firestore.collection('users').doc(userId.trim()).snapshots().map((
+      doc,
+    ) {
+      return WalletSummary.fromJson(doc.data());
+    });
+  }
+
+  Future<PaymentBenefitResult> applyAppPaymentBenefits({
+    required String userId,
+    required String orderId,
+    required double originalAmount,
+    required bool useWallet,
+    required bool usePoints,
+    required List<String> bookingIds,
+  }) async {
+    final trimmedUserId = userId.trim();
+    final trimmedOrderId = orderId.trim();
+    if (trimmedUserId.isEmpty || trimmedOrderId.isEmpty) {
+      throw const PaymentRepositoryException('Thiếu thông tin thanh toán.');
+    }
+
+    try {
+      final response = await _apiClient.postJson('/api/payment/apply-benefits', {
+        'orderId': trimmedOrderId,
+        'originalAmount': originalAmount,
+        'useWallet': useWallet,
+        'usePoints': usePoints,
+        'bookingIds': bookingIds,
+      });
+
+      final body = _decodeBody(response.body);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw PaymentRepositoryException(
+          _extractError(body) ?? 'KhÃ´ng thá»ƒ Ã¡p dá»¥ng vÃ­/Ä‘iá»ƒm.',
+        );
+      }
+
+      if (body is! Map<String, dynamic>) {
+        throw const PaymentRepositoryException(
+          'Backend tráº£ vá» káº¿t quáº£ thanh toÃ¡n khÃ´ng há»£p lá»‡.',
+        );
+      }
+
+      return PaymentBenefitResult(
+        originalAmount: _doubleValue(body['originalAmount']),
+        payableAmount: _doubleValue(body['payableAmount']),
+        walletDiscount: _doubleValue(body['walletDiscount']),
+        pointDiscount: _doubleValue(body['pointDiscount']),
+        pointsSpent: _intValue(body['pointsSpent']),
+        isFullyPaid: body['isFullyPaid'] == true,
+      );
+    } on TimeoutException {
+      throw const PaymentRepositoryException(
+        'Káº¿t ná»‘i backend quÃ¡ thá»i gian chá».',
+      );
+    } on PaymentRepositoryException {
+      rethrow;
+    } catch (_) {
+      throw const PaymentRepositoryException(
+        'KhÃ´ng thá»ƒ káº¿t ná»‘i backend thanh toÃ¡n.',
+      );
+    }
+
+    // ignore: dead_code
+    return _firestore.runTransaction((transaction) async {
+      final userRef = _firestore.collection('users').doc(trimmedUserId);
+      final orderRef = _firestore.collection('orders').doc(trimmedOrderId);
+      final userSnapshot = await transaction.get(userRef);
+      final orderSnapshot = await transaction.get(orderRef);
+
+      if (!userSnapshot.exists) {
+        throw const PaymentRepositoryException('Không tìm thấy ví người dùng.');
+      }
+      if (!orderSnapshot.exists) {
+        throw const PaymentRepositoryException('Không tìm thấy đơn hàng.');
+      }
+
+      final orderData = Map<String, dynamic>.from(
+        orderSnapshot.data() ?? <String, dynamic>{},
+      );
+      final orderUserId = orderData['userId']?.toString() ?? '';
+      if (orderUserId != trimmedUserId) {
+        throw const PaymentRepositoryException(
+          'Tài khoản không có quyền thanh toán đơn hàng này.',
+        );
+      }
+
+      final status = orderData['status']?.toString().toLowerCase() ?? '';
+      if (status != 'pending') {
+        final remaining = _doubleValue(
+          orderData['totalPrice'] ?? orderData['totalAmount'],
+        );
+        return PaymentBenefitResult(
+          originalAmount: _doubleValue(
+            orderData['originalTotalPrice'] ?? originalAmount,
+          ),
+          payableAmount: remaining,
+          walletDiscount: _doubleValue(orderData['appWalletDiscount']),
+          pointDiscount: _doubleValue(orderData['appPointDiscount']),
+          pointsSpent: _intValue(orderData['appPointsSpent']),
+          isFullyPaid:
+              status == 'confirmed' ||
+              status == 'paid' ||
+              status == 'completed',
+        );
+      }
+
+      if (orderData['appBenefitsApplied'] == true) {
+        final remaining = _doubleValue(
+          orderData['totalPrice'] ?? orderData['totalAmount'],
+        );
+        return PaymentBenefitResult(
+          originalAmount: _doubleValue(
+            orderData['originalTotalPrice'] ?? originalAmount,
+          ),
+          payableAmount: remaining,
+          walletDiscount: _doubleValue(orderData['appWalletDiscount']),
+          pointDiscount: _doubleValue(orderData['appPointDiscount']),
+          pointsSpent: _intValue(orderData['appPointsSpent']),
+          isFullyPaid: remaining <= 0,
+        );
+      }
+
+      final userData = Map<String, dynamic>.from(
+        userSnapshot.data() ?? <String, dynamic>{},
+      );
+      final walletBalance = _doubleValue(userData['walletBalance']);
+      final pendingWithdrawal = math.max(
+        0.0,
+        _doubleValue(userData['pendingWithdrawal']),
+      );
+      final availableWallet = math.max(
+        0.0,
+        userData.containsKey('availableBalance')
+            ? _doubleValue(userData['availableBalance'])
+            : walletBalance - pendingWithdrawal,
+      );
+      final availablePoints = _intValue(
+        userData['points'] ?? userData['loyaltyPoints'],
+      );
+      if (usePoints && availablePoints < 100) {
+        throw const PaymentRepositoryException(
+          'Ví điểm cần tối thiểu 100 điểm để sử dụng.',
+        );
+      }
+      final orderAmount = _doubleValue(
+        orderData['totalPrice'] ?? orderData['totalAmount'] ?? originalAmount,
+      );
+      final originalTotal = _doubleValue(
+        orderData['originalTotalPrice'] ?? originalAmount,
+      );
+      var remaining = orderAmount > 0 ? orderAmount : originalTotal;
+      var walletDiscount = 0.0;
+      var pointDiscount = 0.0;
+      var pointsSpent = 0;
+
+      if (useWallet && remaining > 0) {
+        walletDiscount = math.min(availableWallet, remaining);
+        remaining -= walletDiscount;
+      }
+
+      if (usePoints && remaining > 0) {
+        final maxPointValue = availablePoints * 200.0;
+        pointDiscount = math.min(maxPointValue, remaining);
+        pointsSpent = (pointDiscount / 200).ceil();
+        pointDiscount = math.min(pointsSpent * 200.0, remaining);
+        remaining -= pointDiscount;
+      }
+
+      remaining = _normalizeMoney(remaining);
+      walletDiscount = _normalizeMoney(walletDiscount);
+      pointDiscount = _normalizeMoney(pointDiscount);
+
+      final now = FieldValue.serverTimestamp();
+      final orderUpdates = <String, dynamic>{
+        'originalTotalPrice': originalTotal,
+        'totalPrice': remaining,
+        'totalAmount': remaining,
+        'appBenefitsApplied': useWallet || usePoints,
+        'appWalletDiscount': walletDiscount,
+        'appPointDiscount': pointDiscount,
+        'appPointsSpent': pointsSpent,
+        'appPaymentAppliedAt': now,
+        'updatedAt': now,
+      };
+
+      if (remaining <= 0) {
+        orderUpdates.addAll({
+          'status': 'confirmed',
+          'orderStatus': 'confirmed',
+          'paymentStatus': 'success',
+          'paymentProvider': 'app_wallet_points',
+          'paidAmount': originalTotal,
+          'paidAt': now,
+          'confirmedAt': now,
+        });
+      }
+
+      transaction.set(orderRef, orderUpdates, SetOptions(merge: true));
+
+      if (walletDiscount > 0) {
+        transaction.set(userRef, {
+          'walletBalance': walletBalance - walletDiscount,
+          'availableBalance': availableWallet - walletDiscount,
+          'updatedAt': now,
+        }, SetOptions(merge: true));
+
+        final walletTransactionRef = _firestore
+            .collection('walletTransactions')
+            .doc('payment_${trimmedOrderId}_wallet');
+        transaction.set(walletTransactionRef, {
+          'userId': trimmedUserId,
+          'amount': -walletDiscount,
+          'type': 'payment',
+          'status': 'completed',
+          'description': 'Thanh toán đơn đặt sân bằng ví',
+          'sourceOrderId': trimmedOrderId,
+          'provider': 'app_wallet',
+          'createdAt': now,
+        }, SetOptions(merge: true));
+      }
+
+      if (pointsSpent > 0) {
+        transaction.set(userRef, {
+          'points': availablePoints - pointsSpent,
+          'loyaltyPoints': availablePoints - pointsSpent,
+          'updatedAt': now,
+        }, SetOptions(merge: true));
+      }
+
+      if (remaining <= 0) {
+        for (final bookingId in _resolveBookingIds(orderData, bookingIds)) {
+          transaction.set(
+            _firestore.collection('bookings').doc(bookingId),
+            {
+              'status': 'confirmed',
+              'orderStatus': 'confirmed',
+              'paymentStatus': 'success',
+              'paidAt': now,
+              'confirmedAt': now,
+              'updatedAt': now,
+            },
+            SetOptions(merge: true),
+          );
+        }
+      }
+
+      return PaymentBenefitResult(
+        originalAmount: originalTotal,
+        payableAmount: remaining,
+        walletDiscount: walletDiscount,
+        pointDiscount: pointDiscount,
+        pointsSpent: pointsSpent,
+        isFullyPaid: remaining <= 0,
+      );
+    });
+  }
+
+  Future<void> cancelPendingOrder({
+    required String userId,
+    required String orderId,
+    required List<String> bookingIds,
+  }) async {
+    final trimmedUserId = userId.trim();
+    final trimmedOrderId = orderId.trim();
+    if (trimmedUserId.isEmpty || trimmedOrderId.isEmpty) return;
+
+    await _firestore.runTransaction((transaction) async {
+      final userRef = _firestore.collection('users').doc(trimmedUserId);
+      final orderRef = _firestore.collection('orders').doc(trimmedOrderId);
+      final orderSnapshot = await transaction.get(orderRef);
+      if (!orderSnapshot.exists) return;
+
+      final orderData = Map<String, dynamic>.from(
+        orderSnapshot.data() ?? <String, dynamic>{},
+      );
+      final orderUserId = orderData['userId']?.toString() ?? '';
+      if (orderUserId != trimmedUserId) {
+        throw const PaymentRepositoryException(
+          'Tài khoản không có quyền hủy đơn hàng này.',
+        );
+      }
+
+      final status = orderData['status']?.toString().toLowerCase() ?? '';
+      if (status != 'pending') return;
+
+      final now = FieldValue.serverTimestamp();
+      final walletDiscount = _doubleValue(orderData['appWalletDiscount']);
+      final pointsSpent = _intValue(orderData['appPointsSpent']);
+      final benefitsRefunded = orderData['appBenefitsRefunded'] == true;
+      final shouldRefundBenefits =
+          (walletDiscount > 0 || pointsSpent > 0) && !benefitsRefunded;
+      final userSnapshot = shouldRefundBenefits
+          ? await transaction.get(userRef)
+          : null;
+      final userData = Map<String, dynamic>.from(
+        userSnapshot?.data() ?? <String, dynamic>{},
+      );
+
+      transaction.set(orderRef, {
+        'status': 'cancelled',
+        'orderStatus': 'cancelled',
+        'paymentStatus': 'cancelled',
+        'cancelledReason': 'user_cancelled',
+        'cancelledAt': now,
+        'updatedAt': now,
+        if (shouldRefundBenefits) 'appBenefitsRefunded': true,
+      }, SetOptions(merge: true));
+
+      for (final bookingId in _resolveBookingIds(orderData, bookingIds)) {
+        transaction.set(
+          _firestore.collection('bookings').doc(bookingId),
+          {
+            'status': 'cancelled',
+            'orderStatus': 'cancelled',
+            'paymentStatus': 'cancelled',
+            'cancelledReason': 'user_cancelled',
+            'cancelledAt': now,
+            'updatedAt': now,
+          },
+          SetOptions(merge: true),
+        );
+      }
+
+      if (!shouldRefundBenefits) return;
+
+      if (walletDiscount > 0) {
+        final walletBalance = _doubleValue(userData['walletBalance']);
+        final pendingWithdrawal = math.max(
+          0,
+          _doubleValue(userData['pendingWithdrawal']),
+        );
+        final newWalletBalance = walletBalance + walletDiscount;
+        transaction.set(userRef, {
+          'walletBalance': newWalletBalance,
+          'availableBalance': newWalletBalance - pendingWithdrawal,
+          'updatedAt': now,
+        }, SetOptions(merge: true));
+
+        final walletTransactionRef = _firestore
+            .collection('walletTransactions')
+            .doc('refund_${trimmedOrderId}_app_benefits');
+        transaction.set(walletTransactionRef, {
+          'userId': trimmedUserId,
+          'amount': walletDiscount,
+          'type': 'refund',
+          'status': 'completed',
+          'description': 'Hoàn ví do hủy đơn chưa thanh toán',
+          'sourceOrderId': trimmedOrderId,
+          'provider': 'app_wallet',
+          'createdAt': now,
+        }, SetOptions(merge: true));
+      }
+
+      if (pointsSpent > 0) {
+        final currentPoints = _intValue(
+          userData['points'] ?? userData['loyaltyPoints'],
+        );
+        transaction.set(userRef, {
+          'points': currentPoints + pointsSpent,
+          'loyaltyPoints': currentPoints + pointsSpent,
+          'updatedAt': now,
+        }, SetOptions(merge: true));
+      }
+    });
+  }
+
+  Future<PaymentQrResult> generatePaymentQr({required String orderId}) async {
+    try {
+      final response = await _apiClient.postJson('/api/payment/generate-qr', {
+        'orderId': orderId,
+      });
+
+      final body = _decodeBody(response.body);
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw PaymentRepositoryException(
+          _extractError(body) ?? 'Không tạo được mã QR thanh toán.',
+        );
+      }
+
+      if (body is! Map<String, dynamic>) {
+        throw const PaymentRepositoryException(
+          'Backend trả về dữ liệu QR không hợp lệ.',
+        );
+      }
+
+      final qrUrl =
+          body['qrUrl']?.toString() ?? body['QrUrl']?.toString() ?? '';
+      if (qrUrl.isEmpty) {
+        throw const PaymentRepositoryException('Backend không trả về QR URL.');
+      }
+
+      return PaymentQrResult(
+        qrUrl: qrUrl,
+        paymentContent:
+            body['paymentContent']?.toString() ??
+            body['PaymentContent']?.toString() ??
+            orderId,
+      );
+    } on TimeoutException {
+      throw const PaymentRepositoryException(
+        'Kết nối backend quá thời gian chờ.',
+      );
+    } on PaymentRepositoryException {
+      rethrow;
+    } catch (_) {
+      throw const PaymentRepositoryException(
+        'Không thể kết nối backend thanh toán.',
+      );
+    }
+  }
+
+  Future<PaymentReconcileResult> reconcilePayment({
+    required String orderId,
+  }) async {
+    try {
+      final response = await _apiClient.postJson('/api/payment/reconcile', {
+        'orderId': orderId,
+      });
+
+      final body = _decodeBody(response.body);
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw PaymentRepositoryException(
+          _extractError(body) ?? 'Không kiểm tra được thanh toán.',
+        );
+      }
+
+      if (body is! Map<String, dynamic>) {
+        throw const PaymentRepositoryException(
+          'Backend trả về trạng thái thanh toán không hợp lệ.',
+        );
+      }
+
+      return PaymentReconcileResult(
+        isPaid: body['isPaid'] == true,
+        pollingConfigured: body['pollingConfigured'] != false,
+        message: body['message']?.toString(),
+      );
+    } on TimeoutException {
+      throw const PaymentRepositoryException(
+        'Kết nối backend quá thời gian chờ.',
+      );
+    } on PaymentRepositoryException {
+      rethrow;
+    } catch (_) {
+      throw const PaymentRepositoryException(
+        'Không thể kết nối backend thanh toán.',
+      );
+    }
+  }
+
+  Stream<PaymentOrderStatus> watchOrderStatus(String orderId) {
+    return _firestore
+        .collection('orders')
+        .doc(orderId)
+        .snapshots()
+        .map((snapshot) => PaymentOrderStatus.fromJson(snapshot.data()));
+  }
+
+  Object? _decodeBody(String rawBody) {
+    if (rawBody.isEmpty) return null;
+    try {
+      return jsonDecode(rawBody);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _extractError(Object? body) {
+    if (body is Map) {
+      return body['message']?.toString();
+    }
+    return null;
+  }
+
+  static double _doubleValue(Object? value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  static int _intValue(Object? value) {
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  static double _normalizeMoney(double value) {
+    if (value.abs() < 1) return 0;
+    return value.roundToDouble();
+  }
+
+  static List<String> _resolveBookingIds(
+    Map<String, dynamic> orderData,
+    List<String> fallback,
+  ) {
+    final rawBookingIds = orderData['bookingIds'];
+    if (rawBookingIds is Iterable) {
+      return rawBookingIds
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+
+    return fallback
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+}
+
+class PaymentBenefitResult {
+  const PaymentBenefitResult({
+    required this.originalAmount,
+    required this.payableAmount,
+    required this.walletDiscount,
+    required this.pointDiscount,
+    required this.pointsSpent,
+    required this.isFullyPaid,
+  });
+
+  final double originalAmount;
+  final double payableAmount;
+  final double walletDiscount;
+  final double pointDiscount;
+  final int pointsSpent;
+  final bool isFullyPaid;
+}
+
+class PaymentQrResult {
+  const PaymentQrResult({required this.qrUrl, required this.paymentContent});
+
+  final String qrUrl;
+  final String paymentContent;
+}
+
+class PaymentReconcileResult {
+  const PaymentReconcileResult({
+    required this.isPaid,
+    required this.pollingConfigured,
+    this.message,
+  });
+
+  final bool isPaid;
+  final bool pollingConfigured;
+  final String? message;
+}
+
+class PaymentOrderStatus {
+  const PaymentOrderStatus({required this.isPaid});
+
+  factory PaymentOrderStatus.fromJson(Map<String, dynamic>? data) {
+    final status = data?['status']?.toString().toLowerCase();
+    final orderStatus = data?['orderStatus']?.toString().toLowerCase();
+    final paymentStatus = data?['paymentStatus']?.toString().toLowerCase();
+
+    return PaymentOrderStatus(
+      isPaid:
+          status == 'paid' ||
+          status == 'confirmed' ||
+          orderStatus == 'paid' ||
+          orderStatus == 'confirmed' ||
+          paymentStatus == 'success',
+    );
+  }
+
+  final bool isPaid;
+}
+
+class PaymentRepositoryException implements Exception {
+  const PaymentRepositoryException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
