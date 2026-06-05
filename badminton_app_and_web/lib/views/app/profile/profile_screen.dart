@@ -1,141 +1,126 @@
-import 'dart:convert';
+// ===============================
+// FILE: lib/views/app/profile/profile_screen.dart
+// ===============================
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
 
-import '../../../commons/styles/app_colors.dart';
-import '../../../controllers/app/profile_controller.dart';
-import '../../../routes/app_routes.dart';
+import '../../../constants/app_colors.dart';
+import '../home/home_screen.dart';
+import '../booking/booking_screen.dart';
+import '../wallet/wallet_screen.dart';
+import '../notification/notification_screen.dart';
+import '../history/history_screen.dart';
+import 'change_password_screen.dart';
+import 'review_screen.dart';
+import 'map_screen.dart';
 
-class ProfileScreen extends GetView<ProfileController> {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
-  static const _selectedNavIndex = 4;
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  final int _selectedNavIndex = 4;
+  bool _darkMode = false;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      bottomNavigationBar: _buildBottomNav(context),
+      backgroundColor: const Color(0xFFF7F8FA),
       body: SafeArea(
-        child: Obx(() {
-          if (controller.isLoading.value) {
-            return const Center(
-              child: CircularProgressIndicator(color: AppColors.primary),
-            );
-          }
-
-          return SingleChildScrollView(
-            child: Column(
-              children: [
-                _buildHeader(context),
-                const SizedBox(height: 16),
-                _buildPersonalInfo(context),
-                const SizedBox(height: 12),
-                _buildActivities(context),
-                const SizedBox(height: 12),
-                _buildPreferences(context),
-                const SizedBox(height: 12),
-                _buildSecurity(context),
-                const SizedBox(height: 12),
-                _buildLogout(context),
-                const SizedBox(height: 20),
-              ],
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    _buildHeader(),
+                    const SizedBox(height: 16),
+                    _buildPersonalInfo(),
+                    const SizedBox(height: 12),
+                    _buildActivities(),
+                    const SizedBox(height: 12),
+                    _buildPreferences(),
+                    const SizedBox(height: 12),
+                    _buildSecurity(),
+                    const SizedBox(height: 12),
+                    _buildLogout(),
+                    const SizedBox(height: 20),
+                  ],
+                ),
+              ),
             ),
-          );
-        }),
+            _buildBottomNav(),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final cardColor = _cardColor(context);
-    final textColor = _textColor(context);
-
+  Widget _buildHeader() {
     return Container(
       width: double.infinity,
-      color: cardColor,
+      color: Colors.white,
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
       child: Column(
         children: [
-          GestureDetector(
-            onTap: controller.updateAvatarFromGallery,
-            child: Stack(
-              children: [
-                Container(
-                  width: 88,
-                  height: 88,
+          Stack(
+            children: [
+              Container(
+                width: 88,
+                height: 88,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    colors: [AppColors.primary, AppColors.secondary],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withOpacity(0.35),
+                      blurRadius: 16,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.person_rounded, color: Colors.white, size: 44),
+              ),
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: Container(
+                  width: 28,
+                  height: 28,
                   decoration: BoxDecoration(
+                    color: AppColors.primary,
                     shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      colors: [AppColors.primary, AppColors.secondary],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withValues(alpha: 0.28),
-                        blurRadius: 16,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
+                    border: Border.all(color: Colors.white, width: 2),
                   ),
-                  child: ClipOval(child: _buildAvatar()),
+                  child: const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 14),
                 ),
-                Positioned(
-                  bottom: 0,
-                  right: 0,
-                  child: Obx(
-                    () => Container(
-                      width: 28,
-                      height: 28,
-                      decoration: BoxDecoration(
-                        color: colors.primary,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: cardColor, width: 2),
-                      ),
-                      child: controller.isUpdatingAvatar.value
-                          ? const Padding(
-                              padding: EdgeInsets.all(6),
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(
-                              Icons.camera_alt_rounded,
-                              color: Colors.white,
-                              size: 14,
-                            ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
           const SizedBox(height: 14),
-          Text(
-            controller.fullName,
-            textAlign: TextAlign.center,
+          const Text(
+            'Nguyễn Đức Tính',
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w800,
-              color: textColor,
+              color: AppColors.black,
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            controller.emailAddress.isEmpty
-                ? 'profile.emailNotUpdated'.tr
-                : controller.emailAddress,
-            textAlign: TextAlign.center,
+          const Text(
+            'nductinh101@gmail.com',
             style: TextStyle(
               fontSize: 13,
-              color: _mutedTextColor(context),
+              color: AppColors.grey,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -144,164 +129,76 @@ class ProfileScreen extends GetView<ProfileController> {
     );
   }
 
-  Widget _buildAvatar() {
-    final avatarUrl = controller.avatarUrl;
-    if (avatarUrl == null) {
-      return const Icon(Icons.person_rounded, color: Colors.white, size: 44);
-    }
-
-    if (avatarUrl.startsWith('data:image/')) {
-      final commaIndex = avatarUrl.indexOf(',');
-      if (commaIndex > 0) {
-        try {
-          return Image.memory(
-            base64Decode(avatarUrl.substring(commaIndex + 1)),
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              return const Icon(
-                Icons.person_rounded,
-                color: Colors.white,
-                size: 44,
-              );
-            },
-          );
-        } catch (_) {
-          return const Icon(Icons.person_rounded, color: Colors.white, size: 44);
-        }
-      }
-    }
-
-    return Image.network(
-      avatarUrl,
-      fit: BoxFit.cover,
-      errorBuilder: (context, error, stackTrace) {
-        return const Icon(Icons.person_rounded, color: Colors.white, size: 44);
-      },
-    );
-  }
-
-  Widget _buildPersonalInfo(BuildContext context) {
+  Widget _buildPersonalInfo() {
     return _buildSection(
-      context,
-      title: 'profile.personalInfo'.tr,
+      title: 'THÔNG TIN CÁ NHÂN',
       children: [
-        _buildEditableRow(
-          context,
-          Icons.person_outline_rounded,
-          'profile.fullName'.tr,
-          controller.fullName,
-          onTap: () => _showEditProfileDialog(context),
-        ),
+        _buildEditableRow(Icons.person_outline_rounded, 'Họ và tên', 'Nguyễn Đức Tính'),
         _buildDivider(),
-        _buildEditableRow(
-          context,
-          Icons.phone_outlined,
-          'profile.phone'.tr,
-          controller.phoneNumber,
-          onTap: () => _showEditProfileDialog(context),
-        ),
+        _buildEditableRow(Icons.phone_outlined, 'Số điện thoại', '0355342723'),
         _buildDivider(),
-        _buildEditableRow(
-          context,
-          Icons.email_outlined,
-          'profile.email'.tr,
-          controller.emailAddress.isEmpty
-              ? 'profile.notUpdated'.tr
-              : controller.emailAddress,
-          onTap: () => _showEditProfileDialog(context),
-        ),
+        _buildEditableRow(Icons.email_outlined, 'Địa chỉ email', 'nductinh101@gmail.com'),
       ],
     );
   }
 
-  Widget _buildActivities(BuildContext context) {
+  Widget _buildActivities() {
     return _buildSection(
-      context,
-      title: 'profile.myActivities'.tr,
+      title: 'HOẠT ĐỘNG CỦA TÔI',
       children: [
         _buildNavRow(
-          context,
           Icons.history_rounded,
-          'profile.bookingHistory'.tr,
-          onTap: () => Get.toNamed(AppRoutes.history),
+          'Lịch sử đặt sân',
+          onTap: () => Get.to(() => const HistoryScreen()),
         ),
         _buildDivider(),
         _buildNavRow(
-          context,
+          Icons.star_outline_rounded,
+          'Đánh giá',
+          onTap: () => Get.to(() => const ReviewScreen()),
+        ),
+        _buildDivider(),
+        _buildNavRow(
           Icons.location_on_outlined,
-          'profile.mapLocation'.tr,
-          onTap: controller.openCourtLocation,
-          maxLines: 2,
+          'Vị trí sân',
+          onTap: () => Get.to(() => const MapScreen()),
         ),
       ],
     );
   }
 
-  Widget _buildPreferences(BuildContext context) {
+  Widget _buildPreferences() {
     return _buildSection(
-      context,
-      title: 'profile.preferences'.tr,
+      title: 'SỞ THÍCH',
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: [
-              _buildLeadingIcon(context, Icons.dark_mode_outlined),
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.dark_mode_outlined, color: AppColors.primary, size: 18),
+              ),
               const SizedBox(width: 14),
-              Expanded(
+              const Expanded(
                 child: Text(
-                  'profile.darkMode'.tr,
+                  'Chế độ tối',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: _textColor(context),
+                    color: AppColors.black,
                   ),
                 ),
               ),
-              Obx(
-                () => CupertinoSwitch(
-                  value: controller.isDarkMode.value,
-                  activeTrackColor: AppColors.primary,
-                  onChanged: controller.toggleDarkMode,
-                ),
-              ),
-            ],
-          ),
-        ),
-        _buildDivider(),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
-            children: [
-              _buildLeadingIcon(context, Icons.language_rounded),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  'profile.language'.tr,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: _textColor(context),
-                  ),
-                ),
-              ),
-              Obx(
-                () => CupertinoSlidingSegmentedControl<String>(
-                  groupValue: controller.selectedLanguageCode.value,
-                  children: {
-                    'vi': Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Text('profile.vietnameseShort'.tr),
-                    ),
-                    'en': Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Text('profile.englishShort'.tr),
-                    ),
-                  },
-                  onValueChanged: (value) {
-                    if (value != null) controller.changeLanguage(value);
-                  },
-                ),
+              CupertinoSwitch(
+                value: _darkMode,
+                activeColor: AppColors.primary,
+                onChanged: (val) => setState(() => _darkMode = val),
               ),
             ],
           ),
@@ -310,39 +207,42 @@ class ProfileScreen extends GetView<ProfileController> {
     );
   }
 
-  Widget _buildSecurity(BuildContext context) {
+  Widget _buildSecurity() {
     return _buildSection(
-      context,
-      title: 'profile.security'.tr,
+      title: 'BẢO VỆ',
       children: [
         _buildNavRow(
-          context,
           Icons.lock_outline_rounded,
-          'profile.changePassword'.tr,
-          onTap: () => Get.toNamed(AppRoutes.changePassword),
+          'Thay đổi mật khẩu',
+          onTap: () => Get.to(() => const ChangePasswordScreen()),
         ),
       ],
     );
   }
 
-  Widget _buildLogout(BuildContext context) {
+  Widget _buildLogout() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () => _showLogoutDialog(context),
+      child: GestureDetector(
+        onTap: _showLogoutDialog,
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 16),
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: _cardColor(context),
+            color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            boxShadow: _shadow(context),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
-          child: Text(
-            'profile.logout'.tr,
-            style: const TextStyle(
+          child: const Text(
+            'Đăng xuất',
+            style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w700,
               color: Color(0xFFEF5350),
@@ -353,11 +253,7 @@ class ProfileScreen extends GetView<ProfileController> {
     );
   }
 
-  Widget _buildSection(
-    BuildContext context, {
-    required String title,
-    required List<Widget> children,
-  }) {
+  Widget _buildSection({required String title, required List<Widget> children}) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
@@ -367,19 +263,25 @@ class ProfileScreen extends GetView<ProfileController> {
             padding: const EdgeInsets.only(left: 4, bottom: 8),
             child: Text(
               title,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
-                color: _mutedTextColor(context),
+                color: AppColors.grey,
                 letterSpacing: 0.8,
               ),
             ),
           ),
           Container(
             decoration: BoxDecoration(
-              color: _cardColor(context),
+              color: Colors.white,
               borderRadius: BorderRadius.circular(16),
-              boxShadow: _shadow(context),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.03),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
             child: Column(children: children),
           ),
@@ -388,345 +290,148 @@ class ProfileScreen extends GetView<ProfileController> {
     );
   }
 
-  Widget _buildEditableRow(
-    BuildContext context,
-    IconData icon,
-    String label,
-    String value, {
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            _buildLeadingIcon(context, icon),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: _mutedTextColor(context),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    value,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: _textColor(context),
-                    ),
-                  ),
-                ],
-              ),
+  Widget _buildEditableRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
             ),
-            const Icon(Icons.edit_outlined, color: AppColors.primary, size: 18),
-          ],
-        ),
+            child: Icon(icon, color: AppColors.primary, size: 18),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.grey,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.black,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.edit_outlined, color: AppColors.primary, size: 18),
+        ],
       ),
     );
   }
 
-  Widget _buildNavRow(
-    BuildContext context,
-    IconData icon,
-    String label, {
-    required VoidCallback onTap,
-    int maxLines = 1,
-  }) {
-    return InkWell(
+  Widget _buildNavRow(IconData icon, String label, {required VoidCallback onTap}) {
+    return GestureDetector(
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
-            _buildLeadingIcon(context, icon),
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: AppColors.primary, size: 18),
+            ),
             const SizedBox(width: 14),
             Expanded(
               child: Text(
                 label,
-                maxLines: maxLines,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: _textColor(context),
+                  color: AppColors.black,
                 ),
               ),
             ),
-            const Icon(
-              Icons.chevron_right_rounded,
-              color: AppColors.grey,
-              size: 20,
-            ),
+            const Icon(Icons.chevron_right_rounded, color: AppColors.grey, size: 20),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildLeadingIcon(BuildContext context, IconData icon) {
-    return Container(
-      width: 36,
-      height: 36,
-      decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Icon(icon, color: AppColors.primary, size: 18),
     );
   }
 
   Widget _buildDivider() {
-    return const Divider(
-      height: 1,
-      indent: 66,
-      endIndent: 16,
-      color: Color(0xFFE8EEEE),
-    );
+    return const Divider(height: 1, indent: 66, endIndent: 16, color: Color(0xFFF0F0F0));
   }
 
-  Future<void> _showEditProfileDialog(BuildContext context) async {
-    controller.syncProfileForm();
-
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: Text(
-            'profile.editInfo'.tr,
-            style: const TextStyle(fontWeight: FontWeight.w800),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildDialogField(
-                  controller: controller.profileNameController,
-                  label: 'profile.fullName'.tr,
-                  icon: Icons.person_outline_rounded,
-                  textInputAction: TextInputAction.next,
-                ),
-                const SizedBox(height: 12),
-                _buildDialogField(
-                  controller: controller.profilePhoneController,
-                  label: 'profile.phone'.tr,
-                  icon: Icons.phone_outlined,
-                  keyboardType: TextInputType.phone,
-                  textInputAction: TextInputAction.next,
-                ),
-                const SizedBox(height: 12),
-                _buildDialogField(
-                  controller: controller.profileEmailController,
-                  label: 'profile.email'.tr,
-                  icon: Icons.email_outlined,
-                  keyboardType: TextInputType.emailAddress,
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: Text('common.cancel'.tr),
-            ),
-            Obx(
-              () => ElevatedButton(
-                onPressed: controller.isSavingProfile.value
-                    ? null
-                    : () async {
-                        final password = await _showCurrentPasswordDialog(
-                          context,
-                        );
-                        if (password == null) return;
-
-                        final saved = await controller.saveProfileChanges(
-                          password,
-                        );
-                        if (saved && dialogContext.mounted) {
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (dialogContext.mounted) {
-                              Navigator.of(dialogContext).pop();
-                            }
-                          });
-                        }
-                      },
-                style: ElevatedButton.styleFrom(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                child: controller.isSavingProfile.value
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : Text('common.save'.tr),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildDialogField({
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
-    TextInputType? keyboardType,
-    TextInputAction textInputAction = TextInputAction.done,
-  }) {
-    return TextField(
-      controller: controller,
-      keyboardType: keyboardType,
-      textInputAction: textInputAction,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon, size: 18),
-      ),
-    );
-  }
-
-  Future<String?> _showCurrentPasswordDialog(BuildContext context) async {
-    final passwordController = TextEditingController();
-    var obscurePassword = true;
-
-    final password = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              title: Text(
-                'profile.passwordConfirmTitle'.tr,
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-              content: TextField(
-                controller: passwordController,
-                obscureText: obscurePassword,
-                autofocus: true,
-                decoration: InputDecoration(
-                  labelText: 'profile.currentPassword'.tr,
-                  prefixIcon: const Icon(Icons.lock_outline_rounded, size: 18),
-                  suffixIcon: IconButton(
-                    onPressed: () {
-                      setDialogState(() {
-                        obscurePassword = !obscurePassword;
-                      });
-                    },
-                    icon: Icon(
-                      obscurePassword
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined,
-                    ),
-                  ),
-                ),
-                onSubmitted: (_) {
-                  Navigator.pop(dialogContext, passwordController.text);
-                },
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext),
-                  child: Text('common.cancel'.tr),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(dialogContext, passwordController.text);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  child: Text('common.confirm'.tr),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    passwordController.dispose();
-    return password;
-  }
-
-  void _showLogoutDialog(BuildContext context) {
-    showDialog<void>(
+  void _showLogoutDialog() {
+    showDialog(
       context: context,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          'profile.logout'.tr,
-          style: const TextStyle(fontWeight: FontWeight.w800),
+        title: const Text(
+          'Đăng xuất',
+          style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.black),
         ),
-        content: Text(
-          'profile.logoutConfirm'.tr,
-          style: const TextStyle(fontSize: 14),
+        content: const Text(
+          'Bạn có chắc chắn muốn đăng xuất khỏi tài khoản không?',
+          style: TextStyle(color: AppColors.grey, fontSize: 14),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('common.cancel'.tr),
+            child: const Text('Hủy', style: TextStyle(color: AppColors.grey)),
           ),
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
-              controller.signOut();
+              Get.snackbar(
+                'Đã đăng xuất',
+                'Hẹn gặp lại bạn!',
+                backgroundColor: AppColors.primary,
+                colorText: Colors.white,
+              );
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFEF5350),
               elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
-            child: Text(
-              'profile.logout'.tr,
-              style: const TextStyle(color: Colors.white),
-            ),
+            child: const Text('Đăng xuất', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildBottomNav(BuildContext context) {
+  Widget _buildBottomNav() {
     final items = [
-      {'icon': Icons.home_rounded, 'label': 'nav.home'},
-      {'icon': Icons.sports_tennis_rounded, 'label': 'nav.booking'},
-      {'icon': Icons.account_balance_wallet_rounded, 'label': 'nav.wallet'},
-      {'icon': Icons.notifications_rounded, 'label': 'nav.notification'},
-      {'icon': Icons.person_rounded, 'label': 'nav.profile'},
+      {'icon': Icons.home_rounded, 'label': 'Trang chủ'},
+      {'icon': Icons.sports_tennis_rounded, 'label': 'Đặt sân'},
+      {'icon': Icons.account_balance_wallet_rounded, 'label': 'Ví'},
+      {'icon': Icons.notifications_rounded, 'label': 'Thông báo'},
+      {'icon': Icons.person_rounded, 'label': 'Hồ sơ'},
     ];
 
     return Container(
       decoration: BoxDecoration(
-        color: _cardColor(context),
-        boxShadow: _shadow(context),
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.07),
+            blurRadius: 16,
+            offset: const Offset(0, -2),
+          ),
+        ],
       ),
       child: SafeArea(
         top: false,
@@ -734,42 +439,37 @@ class ProfileScreen extends GetView<ProfileController> {
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: List.generate(items.length, (index) {
-              final isSelected = _selectedNavIndex == index;
-              return InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () => _onBottomNavTap(index),
+            children: List.generate(items.length, (i) {
+              final isSelected = _selectedNavIndex == i;
+              return GestureDetector(
+                onTap: () {
+                  if (i == 0) Get.offAll(() => const HomeScreen());
+                  else if (i == 1) Get.off(() => const BookingScreen());
+                  else if (i == 2) Get.off(() => const WalletScreen());
+                  else if (i == 3) Get.off(() => const NotificationScreen());
+                },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 6,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                   decoration: BoxDecoration(
-                    color: isSelected
-                        ? AppColors.primary.withValues(alpha: 0.1)
-                        : Colors.transparent,
+                    color: isSelected ? AppColors.primary.withOpacity(0.1) : Colors.transparent,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        items[index]['icon'] as IconData,
+                        items[i]['icon'] as IconData,
                         color: isSelected ? AppColors.primary : AppColors.grey,
                         size: 22,
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        (items[index]['label'] as String).tr,
+                        items[i]['label'] as String,
                         style: TextStyle(
                           fontSize: 10,
-                          color: isSelected
-                              ? AppColors.primary
-                              : _mutedTextColor(context),
-                          fontWeight: isSelected
-                              ? FontWeight.w700
-                              : FontWeight.w500,
+                          color: isSelected ? AppColors.primary : AppColors.grey,
+                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.normal,
                         ),
                       ),
                     ],
@@ -781,56 +481,5 @@ class ProfileScreen extends GetView<ProfileController> {
         ),
       ),
     );
-  }
-
-  void _onBottomNavTap(int index) {
-    switch (index) {
-      case 0:
-        Get.offAllNamed(AppRoutes.home);
-        return;
-      case 1:
-        Get.offNamed(AppRoutes.booking);
-        return;
-      case 2:
-        Get.offNamed(AppRoutes.wallet);
-        return;
-      case 3:
-        Get.offNamed(AppRoutes.notification);
-        return;
-      default:
-        return;
-    }
-  }
-
-  Color _cardColor(BuildContext context) {
-    return Theme.of(context).brightness == Brightness.dark
-        ? const Color(0xFF18201F)
-        : Colors.white;
-  }
-
-  Color _textColor(BuildContext context) {
-    return Theme.of(context).brightness == Brightness.dark
-        ? const Color(0xFFEAF3F1)
-        : AppColors.black;
-  }
-
-  Color _mutedTextColor(BuildContext context) {
-    return Theme.of(context).brightness == Brightness.dark
-        ? const Color(0xFFB7C7C4)
-        : AppColors.grey;
-  }
-
-  List<BoxShadow> _shadow(BuildContext context) {
-    if (Theme.of(context).brightness == Brightness.dark) {
-      return const [];
-    }
-
-    return [
-      BoxShadow(
-        color: Colors.black.withValues(alpha: 0.04),
-        blurRadius: 8,
-        offset: const Offset(0, 2),
-      ),
-    ];
   }
 }
