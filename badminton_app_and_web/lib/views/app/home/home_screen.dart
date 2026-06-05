@@ -9,6 +9,7 @@ class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   static const double _bottomNavReservedHeight = 96;
+  static const double _priceCourtColumnWidth = 96;
 
   @override
   Widget build(BuildContext context) {
@@ -92,41 +93,71 @@ class HomeScreen extends StatelessWidget {
                   ),
           ),
           const SizedBox(width: 8),
-          GestureDetector(
-            onTap: () => _onBottomNavTap(3, controller),
-            child: Stack(
-              children: [
-                Container(
-                  width: 42,
-                  height: 42,
+          _buildNotificationButton(controller),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNotificationButton(HomeController? controller) {
+    Widget button({required int unreadCount}) {
+      return GestureDetector(
+        onTap: () => _onBottomNavTap(3, controller),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0FAF9),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.notifications_outlined,
+                color: AppColors.primary,
+                size: 22,
+              ),
+            ),
+            if (unreadCount > 0)
+              Positioned(
+                right: -3,
+                top: -4,
+                child: Container(
+                  constraints: const BoxConstraints(
+                    minWidth: 18,
+                    minHeight: 18,
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF0FAF9),
-                    borderRadius: BorderRadius.circular(12),
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(color: Colors.red, width: 1.5),
                   ),
-                  child: const Icon(
-                    Icons.notifications_outlined,
-                    color: AppColors.primary,
-                    size: 22,
-                  ),
-                ),
-                Positioned(
-                  right: 9,
-                  top: 9,
-                  child: Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
+                  child: Text(
+                    unreadCount > 99 ? '99+' : unreadCount.toString(),
+                    maxLines: 1,
+                    style: const TextStyle(
                       color: Colors.red,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 1.5),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      height: 1,
                     ),
                   ),
                 ),
-              ],
-            ),
-          ),
-        ],
-      ),
+              ),
+          ],
+        ),
+      );
+    }
+
+    if (controller == null) {
+      return button(unreadCount: 0);
+    }
+
+    return Obx(
+      () => button(unreadCount: controller.unreadNotificationCount.value),
     );
   }
 
@@ -300,6 +331,8 @@ class HomeScreen extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 10),
+          _buildTimeBandTabs(controller),
           const SizedBox(height: 12),
           _buildPriceHeader(),
           const SizedBox(height: 8),
@@ -348,7 +381,7 @@ class HomeScreen extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: 92,
+            width: _priceCourtColumnWidth,
             child: Text(
               'home.court'.tr,
               style: const TextStyle(
@@ -400,6 +433,24 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildTimeBandTabs(HomeController? controller) {
+    if (controller == null) {
+      return _TimeBandTabs(
+        bands: HomePriceBand.weekdayBands,
+        selectedIndex: 0,
+        onTap: null,
+      );
+    }
+
+    return Obx(
+      () => _TimeBandTabs(
+        bands: controller.priceBands,
+        selectedIndex: controller.selectedPriceBandIndex.value,
+        onTap: controller.selectPriceBand,
+      ),
+    );
+  }
+
   Widget _buildPriceRow(HomePriceRow row) {
     final colors = [
       const Color(0xFF2E7D32),
@@ -425,7 +476,7 @@ class HomeScreen extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: 92,
+            width: _priceCourtColumnWidth,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -635,6 +686,43 @@ class _HeaderText extends StatelessWidget {
           style: const TextStyle(fontSize: 12, color: AppColors.grey),
         ),
       ],
+    );
+  }
+}
+
+class _TimeBandTabs extends StatelessWidget {
+  const _TimeBandTabs({
+    required this.bands,
+    required this.selectedIndex,
+    required this.onTap,
+  });
+
+  final List<HomePriceBand> bands;
+  final int selectedIndex;
+  final ValueChanged<int>? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFEEEEEE)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(
+            bands.length,
+            (index) => _ToggleButton(
+              label: bands[index].timeLabel,
+              isSelected: selectedIndex == index,
+              onTap: onTap == null ? null : () => onTap!(index),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -4,6 +4,7 @@ import '../../controllers/app/home_controller.dart';
 import '../../data/network/api_client.dart';
 import '../../data/repository/auth_repository.dart';
 import '../../data/repository/court_repository.dart';
+import '../../data/repository/notification_repository.dart';
 import '../../data/repository/user_repository.dart';
 
 class HomeBinding extends Bindings {
@@ -23,10 +24,14 @@ class HomeBinding extends Bindings {
     if (!Get.isRegistered<UserRepository>()) {
       Get.lazyPut<UserRepository>(() => UserRepository());
     }
+    if (!Get.isRegistered<NotificationRepository>()) {
+      Get.lazyPut<NotificationRepository>(() => NotificationRepository());
+    }
 
     Get.lazyPut<HomeController>(
       () => HomeController(
         courtRepository: Get.find<CourtRepository>(),
+        notificationRepository: Get.find<NotificationRepository>(),
         userRepository: Get.find<UserRepository>(),
         authRepository: Get.find<AuthRepository>(),
       ),

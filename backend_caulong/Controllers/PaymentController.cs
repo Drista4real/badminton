@@ -224,6 +224,9 @@ public sealed class PaymentController : ControllerBase
             await DeletePendingFixedBookingNotificationAsync(
                 request.OrderId.Trim(),
                 cancellationToken);
+            await NotifyOrderCancelledAsync(
+                request.OrderId.Trim(),
+                cancellationToken);
 
             return Ok(new
             {
@@ -1003,6 +1006,25 @@ public sealed class PaymentController : ControllerBase
             _logger.LogWarning(
                 ex,
                 "Could not delete pending fixed booking notification for order {OrderId}.",
+                orderId);
+        }
+    }
+
+    private async Task NotifyOrderCancelledAsync(
+        string orderId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _bookingNotificationService.NotifyOrderCancelledAsync(
+                orderId,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Cancelled order {OrderId}, but could not write cancellation notification.",
                 orderId);
         }
     }

@@ -32,7 +32,11 @@ class SplashController extends GetxController {
     if (user != null &&
         pendingVerificationUserId == user.uid &&
         !_authRepository.requiresEmailVerification(user)) {
-      await _authRepository.ensureUserDocument(user);
+      try {
+        await _authRepository.ensureUserDocument(user);
+      } catch (_) {
+        // Profile sync must not keep verified users stuck on splash.
+      }
       await prefs.remove(AuthController.pendingEmailVerificationUserKey);
       await _authRepository.signOut();
       Get.offNamed(AppRoutes.login);

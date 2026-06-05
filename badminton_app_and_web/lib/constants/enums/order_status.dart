@@ -4,7 +4,9 @@ enum OrderStatus {
   paid,
   completed,
   cancelled,
-  cancelledByUserFixed;
+  cancelledByUserFixed,
+  refundPending,
+  noShow;
 
   String get value {
     switch (this) {
@@ -19,7 +21,11 @@ enum OrderStatus {
       case OrderStatus.cancelled:
         return 'cancelled';
       case OrderStatus.cancelledByUserFixed:
-        return 'Cancelled_By_User_Fixed';
+        return 'cancelled_by_user_fixed';
+      case OrderStatus.refundPending:
+        return 'refund_pending';
+      case OrderStatus.noShow:
+        return 'no_show';
     }
   }
 
@@ -36,6 +42,12 @@ enum OrderStatus {
       case 'Cancelled_By_User_Fixed':
       case 'cancelled_by_user_fixed':
         return OrderStatus.cancelledByUserFixed;
+      case 'refund_pending':
+      case 'Refund_Pending':
+        return OrderStatus.refundPending;
+      case 'no_show':
+      case 'No_Show':
+        return OrderStatus.noShow;
       case 'pending':
       default:
         return OrderStatus.pending;

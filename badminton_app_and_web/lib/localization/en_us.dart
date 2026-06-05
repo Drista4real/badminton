@@ -34,6 +34,7 @@ const Map<String, String> enUs = {
   'home.bookNow': 'Book now',
   'home.priceTitle': 'Court pricing',
   'home.court': 'Court',
+  'home.time': 'Time',
   'home.fixed': 'Fixed',
   'home.account': 'Account',
   'home.guest': 'Guest',

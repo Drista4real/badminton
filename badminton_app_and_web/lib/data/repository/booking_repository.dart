@@ -17,9 +17,9 @@ class BookingRepository {
 
   Stream<List<BookingModel>> watchActiveBookings() async* {
     yield await fetchActiveBookings();
-    yield* Stream<void>.periodic(const Duration(seconds: 30)).asyncMap(
-      (_) => fetchActiveBookings(),
-    );
+    yield* Stream<void>.periodic(
+      const Duration(seconds: 30),
+    ).asyncMap((_) => fetchActiveBookings());
   }
 
   Stream<List<BookingModel>> watchUserBookings(String userId) {
@@ -47,7 +47,9 @@ class BookingRepository {
 
       final body = _decodeBody(response.body);
       if (body is! Map<String, dynamic>) {
-        throw const BookingApiException('Pháº£n há»“i lá»‹ch Ä‘áº·t sÃ¢n khÃ´ng há»£p lá»‡.');
+        throw const BookingApiException(
+          'Pháº£n há»“i lá»‹ch Ä‘áº·t sÃ¢n khÃ´ng há»£p lá»‡.',
+        );
       }
 
       final rawItems = body['items'];
@@ -60,11 +62,15 @@ class BookingRepository {
           .map((item) => BookingModel.fromJson(Map<String, dynamic>.from(item)))
           .toList();
     } on TimeoutException {
-      throw const BookingApiException('Káº¿t ná»‘i backend quÃ¡ thá»i gian chá».');
+      throw const BookingApiException(
+        'Káº¿t ná»‘i backend quÃ¡ thá»i gian chá».',
+      );
     } on BookingApiException {
       rethrow;
     } catch (_) {
-      throw const BookingApiException('KhÃ´ng thá»ƒ káº¿t ná»‘i backend Ä‘áº·t sÃ¢n.');
+      throw const BookingApiException(
+        'KhÃ´ng thá»ƒ káº¿t ná»‘i backend Ä‘áº·t sÃ¢n.',
+      );
     }
   }
 
@@ -88,6 +94,101 @@ class BookingRepository {
           'Không thể hủy đơn đặt sân.',
         );
       }
+    } on TimeoutException {
+      throw const BookingApiException('Kết nối backend quá thời gian chờ.');
+    } on BookingApiException {
+      rethrow;
+    } catch (_) {
+      throw const BookingApiException('Không thể kết nối backend đặt sân.');
+    }
+  }
+
+  Future<ReportFixedAbsenceApiResult> reportFixedAbsence({
+    required String bookingId,
+  }) async {
+    try {
+      final response = await _apiClient.postJson(
+        '/api/bookings/report-absence',
+        {'bookingId': bookingId},
+      );
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw _apiExceptionFromResponse(
+          response.statusCode,
+          response.body,
+          'Không thể báo nghỉ buổi này.',
+        );
+      }
+
+      final body = _decodeBody(response.body);
+      if (body is! Map<String, dynamic>) {
+        throw const BookingApiException('Phản hồi báo nghỉ không hợp lệ.');
+      }
+
+      return ReportFixedAbsenceApiResult(
+        bookingId: body['bookingId']?.toString() ?? bookingId,
+        orderId: body['orderId']?.toString() ?? '',
+        refundedAmount: (body['refundedAmount'] as num?)?.toDouble() ?? 0,
+        absenceCountThisMonth:
+            (body['absenceCountThisMonth'] as num?)?.toInt() ?? 0,
+      );
+    } on TimeoutException {
+      throw const BookingApiException('Kết nối backend quá thời gian chờ.');
+    } on BookingApiException {
+      rethrow;
+    } catch (_) {
+      throw const BookingApiException('Không thể kết nối backend đặt sân.');
+    }
+  }
+
+  Future<CancelWithRefundApiResult> cancelBookingWithRefund({
+    required String orderId,
+    required String refundMethod,
+    String? bankName,
+    String? bankAccountNumber,
+    String? bankAccountName,
+  }) async {
+    try {
+      final payload = <String, Object>{
+        'orderId': orderId,
+        'refundMethod': refundMethod,
+      };
+      if (bankName != null) {
+        payload['bankName'] = bankName;
+      }
+      if (bankAccountNumber != null) {
+        payload['bankAccountNumber'] = bankAccountNumber;
+      }
+      if (bankAccountName != null) {
+        payload['bankAccountName'] = bankAccountName;
+      }
+
+      final response = await _apiClient.postJson(
+        '/api/bookings/cancel-with-refund',
+        payload,
+      );
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw _apiExceptionFromResponse(
+          response.statusCode,
+          response.body,
+          'Không thể hủy đơn đặt sân.',
+        );
+      }
+
+      final body = _decodeBody(response.body);
+      if (body is! Map<String, dynamic>) {
+        throw const BookingApiException('Phản hồi hủy đơn không hợp lệ.');
+      }
+
+      return CancelWithRefundApiResult(
+        orderId: body['orderId']?.toString() ?? orderId,
+        status: body['status']?.toString() ?? '',
+        refundMethod: body['refundMethod']?.toString() ?? refundMethod,
+        refundAmount: (body['refundAmount'] as num?)?.toDouble() ?? 0,
+        refundRate: (body['refundRate'] as num?)?.toDouble() ?? 0,
+        refundedToWallet: body['refundedToWallet'] == true,
+      );
     } on TimeoutException {
       throw const BookingApiException('Kết nối backend quá thời gian chờ.');
     } on BookingApiException {
@@ -413,6 +514,38 @@ class RenewFixedBookingApiResult {
   final String orderId;
   final List<String> bookingIds;
   final double totalPrice;
+}
+
+class ReportFixedAbsenceApiResult {
+  const ReportFixedAbsenceApiResult({
+    required this.bookingId,
+    required this.orderId,
+    required this.refundedAmount,
+    required this.absenceCountThisMonth,
+  });
+
+  final String bookingId;
+  final String orderId;
+  final double refundedAmount;
+  final int absenceCountThisMonth;
+}
+
+class CancelWithRefundApiResult {
+  const CancelWithRefundApiResult({
+    required this.orderId,
+    required this.status,
+    required this.refundMethod,
+    required this.refundAmount,
+    required this.refundRate,
+    required this.refundedToWallet,
+  });
+
+  final String orderId;
+  final String status;
+  final String refundMethod;
+  final double refundAmount;
+  final double refundRate;
+  final bool refundedToWallet;
 }
 
 class BookingApiException implements Exception {

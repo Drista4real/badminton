@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'app_settings_controller.dart';
@@ -23,9 +25,11 @@ class ProfileController extends GetxController with WidgetsBindingObserver {
   static const mapLocationLabel = 'Vị trí cơ sở cầu lông';
   static const _passwordVerificationCooldown = Duration(seconds: 60);
   static const _passwordVerificationLifetime = Duration(minutes: 5);
+  static const _maxAvatarBytes = 260 * 1024;
 
   final AuthRepository _authRepository;
   final UserRepository _userRepository;
+  final ImagePicker _imagePicker = ImagePicker();
   final AppSettingsController _settingsController =
       Get.find<AppSettingsController>();
 
@@ -36,6 +40,7 @@ class ProfileController extends GetxController with WidgetsBindingObserver {
   final isLoading = true.obs;
   final isSavingProfile = false.obs;
   final isChangingPassword = false.obs;
+  final isUpdatingAvatar = false.obs;
   final isPasswordVerificationLoading = false.obs;
   final isPasswordChangeVerified = false.obs;
   final isDarkMode = false.obs;
@@ -165,6 +170,10 @@ class ProfileController extends GetxController with WidgetsBindingObserver {
       _showError('Email không hợp lệ.');
       return false;
     }
+    if (phoneNumber.isNotEmpty && !_isValidPhoneNumber(phoneNumber)) {
+      _showError('Số điện thoại không hợp lệ.');
+      return false;
+    }
     if (currentPassword.isEmpty) {
       _showError('Vui lòng nhập mật khẩu hiện tại để xác thực.');
       return false;
@@ -184,12 +193,22 @@ class ProfileController extends GetxController with WidgetsBindingObserver {
         await _authRepository.verifyBeforeUpdateEmail(email);
       }
 
-      await _userRepository.updateUserProfile(userId, {
+      final profileUpdates = {
         'fullName': fullName,
-        'phoneNumber': phoneNumber,
         'email': email,
         if (isEmailChanged) 'emailVerified': false,
-      });
+      };
+      if (phoneNumber.isEmpty) {
+        await _userRepository.updateUserProfile(userId, profileUpdates);
+      } else {
+        final previousPhoneNumber = user.value?.phoneNumber;
+        await _userRepository.updateUserProfileWithUniquePhone(
+          userId,
+          profileUpdates,
+          phoneNumber: phoneNumber,
+          previousPhoneNumber: previousPhoneNumber,
+        );
+      }
       await _authRepository.reloadCurrentUser();
 
       Get.snackbar(
@@ -203,11 +222,70 @@ class ProfileController extends GetxController with WidgetsBindingObserver {
     } on FirebaseAuthException catch (error) {
       _showError(_firebaseMessage(error));
       return false;
+    } on FirebaseException catch (error) {
+      if (error.code == 'phone-already-in-use') {
+        _showError('Số điện thoại này đã được sử dụng cho tài khoản khác.');
+      } else {
+        _showError('Không thể cập nhật thông tin. Vui lòng thử lại.');
+      }
+      return false;
     } catch (_) {
       _showError('Không thể cập nhật thông tin. Vui lòng thử lại.');
       return false;
     } finally {
       isSavingProfile.value = false;
+    }
+  }
+
+  Future<void> updateAvatarFromGallery() async {
+    if (isUpdatingAvatar.value) return;
+
+    final userId = _authRepository.currentUserId;
+    if (userId == null || userId.isEmpty) {
+      _showError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+      return;
+    }
+
+    isUpdatingAvatar.value = true;
+    try {
+      final pickedImage = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 320,
+        maxHeight: 320,
+        imageQuality: 58,
+      );
+      if (pickedImage == null) {
+        return;
+      }
+
+      final bytes = await pickedImage.readAsBytes();
+      if (bytes.length > _maxAvatarBytes) {
+        _showError('Ảnh đại diện quá lớn. Vui lòng chọn ảnh nhỏ hơn.');
+        return;
+      }
+
+      final mimeType = pickedImage.mimeType?.trim().isNotEmpty == true
+          ? pickedImage.mimeType!.trim()
+          : 'image/jpeg';
+      final dataUrl = 'data:$mimeType;base64,${base64Encode(bytes)}';
+      final currentUser = _authRepository.currentUser;
+      if (currentUser != null) {
+        await _authRepository.ensureUserDocument(currentUser);
+      }
+      await _userRepository.updateUserProfile(userId, {'avatarUrl': dataUrl});
+      user.value = user.value?.copyWith(avatarUrl: dataUrl);
+
+      Get.snackbar(
+        'Đã cập nhật',
+        'Ảnh đại diện đã được thay đổi.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+    } on FirebaseException catch (error) {
+      _showError(_avatarUpdateMessage(error));
+    } catch (_) {
+      _showError('Không thể cập nhật ảnh đại diện. Vui lòng thử lại.');
+    } finally {
+      isUpdatingAvatar.value = false;
     }
   }
 
@@ -534,6 +612,27 @@ class ProfileController extends GetxController with WidgetsBindingObserver {
       message,
       snackPosition: SnackPosition.BOTTOM,
     );
+  }
+
+  bool _isValidPhoneNumber(String phoneNumber) {
+    final normalized = UserRepository.normalizePhoneNumber(phoneNumber);
+    return normalized.length == 10 && normalized.startsWith('0');
+  }
+
+  String _avatarUpdateMessage(FirebaseException error) {
+    switch (error.code) {
+      case 'permission-denied':
+        return 'Không có quyền cập nhật ảnh. Vui lòng đăng nhập lại hoặc kiểm tra Firestore rules.';
+      case 'not-found':
+        return 'Chưa có hồ sơ người dùng để cập nhật ảnh. Vui lòng đăng nhập lại.';
+      case 'resource-exhausted':
+      case 'invalid-argument':
+        return 'Ảnh quá lớn để lưu. Vui lòng chọn ảnh nhỏ hơn.';
+      default:
+        return error.message?.trim().isNotEmpty == true
+            ? error.message!.trim()
+            : 'Không thể cập nhật ảnh đại diện. Vui lòng thử lại.';
+    }
   }
 
   @override

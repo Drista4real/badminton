@@ -49,6 +49,7 @@ builder.Services.AddScoped<ICourtRepository, CourtRepository>();
 builder.Services.AddScoped<IOrderRepository, OrderRepository>();
 builder.Services.AddScoped<IWalletRepository, WalletRepository>();
 builder.Services.AddHostedService<ExpiredOrderCleanupService>();
+builder.Services.AddHostedService<FixedBookingCompletionService>();
 builder.Services.AddHttpClient<IVietQrService, VietQrService>();
 builder.Services.AddHttpClient<ISePayTransactionLookupService, SePayTransactionLookupService>();
 builder.Services.AddCors(options =>

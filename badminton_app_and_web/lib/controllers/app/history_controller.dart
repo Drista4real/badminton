@@ -126,13 +126,24 @@ class HistoryController extends GetxController {
     if (_isCancelled(booking.status)) {
       return false;
     }
-
-    final nextSession = nextSessionStart(booking);
-    if (nextSession == null) {
+    if (booking.status != OrderStatus.confirmed &&
+        booking.status != OrderStatus.paid) {
       return false;
     }
 
-    return nextSession.difference(DateTime.now()) > const Duration(hours: 24);
+    return sessionStart(booking).difference(DateTime.now()) >
+        const Duration(hours: 24);
+  }
+
+  bool canCancelWithRefund(BookingModel booking) {
+    if (isFixedSchedule(booking)) {
+      return false;
+    }
+    if (booking.status != OrderStatus.confirmed &&
+        booking.status != OrderStatus.paid) {
+      return false;
+    }
+    return sessionStart(booking).isAfter(DateTime.now());
   }
 
   bool shouldShowRenewButton(BookingModel booking) {
@@ -148,7 +159,7 @@ class HistoryController extends GetxController {
       return true;
     }
 
-    return endDate.difference(DateTime.now()).inDays <= 14;
+    return endDate.difference(DateTime.now()).inDays <= 7;
   }
 
   DateTime? nextSessionStart(BookingModel booking) {
@@ -197,19 +208,86 @@ class HistoryController extends GetxController {
 
     processingBookingIds.add(booking.id);
     try {
-      await _bookingRepository.cancelFixedBookingByUser(
-        booking.id,
-        orderId: booking.orderId,
+      final result = await _bookingRepository.reportFixedAbsence(
+        bookingId: booking.id,
       );
+      if (result.refundedAmount < 0) {
+        return;
+      }
       Get.snackbar(
         'Đã báo nghỉ',
         'Buổi cố định đã được hủy. Hệ thống sẽ hoàn tiền 100% vào ví.',
         backgroundColor: AppColors.primary,
         colorText: Colors.white,
       );
+    } on BookingApiException catch (error) {
+      Get.snackbar(
+        'Không thể báo nghỉ',
+        error.message,
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
     } catch (_) {
       Get.snackbar(
         'Không thể báo nghỉ',
+        'Vui lòng thử lại sau.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+    } finally {
+      processingBookingIds.remove(booking.id);
+    }
+  }
+
+  Future<void> cancelBookingWithRefund({
+    required BookingModel booking,
+    required String refundMethod,
+    String? bankName,
+    String? bankAccountNumber,
+    String? bankAccountName,
+  }) async {
+    final orderId = booking.orderId;
+    if (orderId == null || orderId.isEmpty) {
+      Get.snackbar(
+        'Không thể hủy đơn',
+        'Đơn đặt sân thiếu mã đơn hàng.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+
+    processingBookingIds.add(booking.id);
+    try {
+      final result = await _bookingRepository.cancelBookingWithRefund(
+        orderId: orderId,
+        refundMethod: refundMethod,
+        bankName: bankName,
+        bankAccountNumber: bankAccountNumber,
+        bankAccountName: bankAccountName,
+      );
+      if (Get.isBottomSheetOpen == true) {
+        Get.back<void>();
+      }
+
+      Get.snackbar(
+        'Đã ghi nhận hủy đơn',
+        result.refundMethod == 'wallet'
+            ? 'Đã hoàn ${formatMoney(result.refundAmount)} vào Ví tiền.'
+            : 'Yêu cầu hoàn ${formatMoney(result.refundAmount)} đang chờ kế toán xử lý.',
+        backgroundColor: AppColors.primary,
+        colorText: Colors.white,
+      );
+    } on BookingApiException catch (error) {
+      Get.snackbar(
+        'Không thể hủy đơn',
+        error.message,
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+    } catch (_) {
+      Get.snackbar(
+        'Không thể hủy đơn',
         'Vui lòng thử lại sau.',
         backgroundColor: Colors.red,
         colorText: Colors.white,
@@ -359,6 +437,17 @@ class HistoryController extends GetxController {
     return 'Buổi tới: ${formatDate(session)}';
   }
 
+  DateTime sessionStart(BookingModel booking) {
+    final date = booking.bookingDate;
+    return DateTime(
+      date.year,
+      date.month,
+      date.day,
+      booking.startTime ~/ 60,
+      booking.startTime % 60,
+    );
+  }
+
   String timeRange(BookingModel booking) {
     return '${_minuteText(booking.startTime)} - ${_minuteText(booking.endTime)}';
   }
@@ -376,6 +465,10 @@ class HistoryController extends GetxController {
         return 'Đã hủy';
       case OrderStatus.cancelledByUserFixed:
         return 'Đã báo nghỉ';
+      case OrderStatus.refundPending:
+        return 'Chờ hoàn tiền';
+      case OrderStatus.noShow:
+        return 'Vắng mặt';
     }
   }
 
@@ -390,6 +483,8 @@ class HistoryController extends GetxController {
         return const Color(0xFF2E7D32);
       case OrderStatus.cancelled:
       case OrderStatus.cancelledByUserFixed:
+      case OrderStatus.refundPending:
+      case OrderStatus.noShow:
         return const Color(0xFFD32F2F);
     }
   }
@@ -550,7 +645,9 @@ class HistoryController extends GetxController {
 
   bool _isCancelled(OrderStatus status) {
     return status == OrderStatus.cancelled ||
-        status == OrderStatus.cancelledByUserFixed;
+        status == OrderStatus.cancelledByUserFixed ||
+        status == OrderStatus.refundPending ||
+        status == OrderStatus.noShow;
   }
 
   String _requireCurrentUserId() {

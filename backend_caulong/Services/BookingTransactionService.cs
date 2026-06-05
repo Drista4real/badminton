@@ -24,6 +24,16 @@ public interface IBookingTransactionService
         string userId,
         CancelBookingRequest request,
         CancellationToken cancellationToken = default);
+
+    Task<ReportFixedAbsenceResult> ReportFixedAbsenceAsync(
+        string userId,
+        ReportFixedAbsenceRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<CancelOrderWithRefundResult> CancelOrderWithRefundAsync(
+        string userId,
+        CancelOrderWithRefundRequest request,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class BookingTransactionService : IBookingTransactionService
@@ -189,6 +199,75 @@ public sealed class BookingTransactionService : IBookingTransactionService
         return new CancelBookingResult(result.OrderId, result.BookingIds);
     }
 
+    public async Task<ReportFixedAbsenceResult> ReportFixedAbsenceAsync(
+        string userId,
+        ReportFixedAbsenceRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new ArgumentException("userId is required.", nameof(userId));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.BookingId))
+        {
+            throw new ArgumentException("bookingId is required.", nameof(request));
+        }
+
+        var result = await _bookingRepository.ReportFixedAbsenceAsync(
+            new ReportFixedAbsenceWriteRequest(
+                userId.Trim(),
+                request.BookingId.Trim()),
+            cancellationToken);
+
+        return new ReportFixedAbsenceResult(
+            result.BookingId,
+            result.OrderId,
+            result.RefundedAmount,
+            result.AbsenceCountThisMonth,
+            result.Refunded);
+    }
+
+    public async Task<CancelOrderWithRefundResult> CancelOrderWithRefundAsync(
+        string userId,
+        CancelOrderWithRefundRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new ArgumentException("userId is required.", nameof(userId));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.OrderId))
+        {
+            throw new ArgumentException("orderId is required.", nameof(request));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.RefundMethod))
+        {
+            throw new ArgumentException("refundMethod is required.", nameof(request));
+        }
+
+        var result = await _bookingRepository.CancelOrderWithRefundAsync(
+            new CancelOrderWithRefundWriteRequest(
+                userId.Trim(),
+                request.OrderId.Trim(),
+                request.RefundMethod.Trim(),
+                request.BankName,
+                request.BankAccountNumber,
+                request.BankAccountName),
+            cancellationToken);
+
+        return new CancelOrderWithRefundResult(
+            result.OrderId,
+            result.BookingIds,
+            result.Status,
+            result.RefundMethod,
+            result.RefundAmount,
+            result.RefundRate,
+            result.RefundedToWallet);
+    }
+
     private static void ValidateRequest(BookingRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.CourtId))
@@ -326,6 +405,15 @@ public sealed record RenewFixedBookingRequest(
 
 public sealed record CancelBookingRequest(string OrderId);
 
+public sealed record ReportFixedAbsenceRequest(string BookingId);
+
+public sealed record CancelOrderWithRefundRequest(
+    string OrderId,
+    string RefundMethod,
+    string? BankName,
+    string? BankAccountNumber,
+    string? BankAccountName);
+
 public sealed record CreateBookingResult(
     string OrderId,
     IReadOnlyList<string> BookingIds,
@@ -342,6 +430,22 @@ public sealed record RenewFixedBookingResult(
 public sealed record CancelBookingResult(
     string OrderId,
     IReadOnlyList<string> BookingIds);
+
+public sealed record ReportFixedAbsenceResult(
+    string BookingId,
+    string OrderId,
+    double RefundedAmount,
+    int AbsenceCountThisMonth,
+    bool Refunded);
+
+public sealed record CancelOrderWithRefundResult(
+    string OrderId,
+    IReadOnlyList<string> BookingIds,
+    string Status,
+    string RefundMethod,
+    double RefundAmount,
+    double RefundRate,
+    bool RefundedToWallet);
 
 public sealed class BookingConflictException : Exception
 {

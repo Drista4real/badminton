@@ -200,10 +200,10 @@ class TimeRangeSelectorWidget extends GetView<BookingController> {
             ),
             Row(
               children: [
-                const Icon(
-                  Icons.zoom_out_rounded,
+                _ZoomButton(
+                  icon: Icons.zoom_out_rounded,
                   color: AppColors.grey,
-                  size: 18,
+                  onTap: controller.decreaseTimelineScale,
                 ),
                 Expanded(
                   child: SliderTheme(
@@ -227,14 +227,42 @@ class TimeRangeSelectorWidget extends GetView<BookingController> {
                     ),
                   ),
                 ),
-                const Icon(
-                  Icons.zoom_in_rounded,
+                _ZoomButton(
+                  icon: Icons.zoom_in_rounded,
                   color: AppColors.primary,
-                  size: 18,
+                  onTap: controller.increaseTimelineScale,
                 ),
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ZoomButton extends StatelessWidget {
+  const _ZoomButton({
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: icon == Icons.zoom_out_rounded ? 'Thu nhỏ' : 'Phóng to',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: SizedBox(
+          width: 34,
+          height: 34,
+          child: Icon(icon, color: color, size: 20),
         ),
       ),
     );

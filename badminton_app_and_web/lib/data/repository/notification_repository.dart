@@ -14,7 +14,7 @@ class NotificationRepository {
   Stream<List<NotificationModel>> watchUserNotifications(String userId) {
     return _notifications
         .where('userId', isEqualTo: userId.trim())
-        .limit(100)
+        .limit(500)
         .snapshots()
         .map((snapshot) {
           final items = snapshot.docs

@@ -571,6 +571,14 @@ class BookingController extends GetxController {
         .toDouble();
   }
 
+  void decreaseTimelineScale() {
+    setTimelineScale(timelineScale.value - 0.25);
+  }
+
+  void increaseTimelineScale() {
+    setTimelineScale(timelineScale.value + 0.25);
+  }
+
   List<BookingSlotSelection> get selectedSlots {
     final slots = <BookingSlotSelection>[];
     for (final key in selectedSlotKeys) {

@@ -11,6 +11,7 @@ import '../bindings/app/payment_binding.dart';
 import '../bindings/app/profile_binding.dart';
 import '../bindings/app/wallet_binding.dart';
 import '../middlewares/auth_middleware.dart';
+import '../views/app/auth/forgot_password_screen.dart';
 import '../views/app/auth/login_screen.dart';
 import '../views/app/auth/otp_screen.dart';
 import '../views/app/auth/register_screen.dart';
@@ -52,6 +53,11 @@ class AppPages {
     GetPage(
       name: AppRoutes.register,
       page: () => const RegisterScreen(),
+      binding: AuthBinding(),
+    ),
+    GetPage(
+      name: AppRoutes.forgotPassword,
+      page: () => const ForgotPasswordScreen(),
       binding: AuthBinding(),
     ),
     GetPage(

@@ -6,6 +6,7 @@ import '../../data/models/court_model.dart';
 import '../../data/models/user_model.dart';
 import '../../data/repository/auth_repository.dart';
 import '../../data/repository/court_repository.dart';
+import '../../data/repository/notification_repository.dart';
 import '../../data/repository/user_repository.dart';
 import '../../routes/app_routes.dart';
 import '../../utils/currency_format.dart';
@@ -14,34 +15,49 @@ import '../../utils/date_format.dart';
 class HomeController extends GetxController {
   HomeController({
     required CourtRepository courtRepository,
+    required NotificationRepository notificationRepository,
     required UserRepository userRepository,
     required AuthRepository authRepository,
   }) : _courtRepository = courtRepository,
+       _notificationRepository = notificationRepository,
        _userRepository = userRepository,
        _authRepository = authRepository;
 
   final CourtRepository _courtRepository;
+  final NotificationRepository _notificationRepository;
   final UserRepository _userRepository;
   final AuthRepository _authRepository;
 
   final selectedNavIndex = 0.obs;
   final selectedDayIndex = 0.obs;
+  final selectedPriceBandIndex = 0.obs;
   final isLoadingCourts = true.obs;
   final errorMessage = ''.obs;
   final courts = <CourtModel>[].obs;
   final user = Rxn<UserModel>();
+  final unreadNotificationCount = 0.obs;
 
   StreamSubscription<UserModel?>? _userSub;
+  StreamSubscription? _notificationsSub;
 
   @override
   void onInit() {
     super.onInit();
     refreshCourts();
     _watchUser();
+    _watchUnreadNotifications();
   }
 
   void selectDay(int index) {
     selectedDayIndex.value = index;
+    selectedPriceBandIndex.value = 0;
+  }
+
+  void selectPriceBand(int index) {
+    if (index < 0 || index >= priceBands.length) {
+      return;
+    }
+    selectedPriceBandIndex.value = index;
   }
 
   void onBottomNavTap(int index) {
@@ -86,16 +102,34 @@ class HomeController extends GetxController {
     return DateFormatUtils.vietnameseWeekdayDate(DateTime.now());
   }
 
+  List<HomePriceBand> get priceBands {
+    return selectedDayIndex.value == 0
+        ? HomePriceBand.weekdayBands
+        : HomePriceBand.weekendBands;
+  }
+
+  HomePriceBand get selectedPriceBand {
+    final bands = priceBands;
+    final selectedIndex = selectedPriceBandIndex.value;
+    if (selectedIndex >= 0 && selectedIndex < bands.length) {
+      return bands[selectedIndex];
+    }
+    return bands.first;
+  }
+
   List<HomePriceRow> get priceRows {
-    return courts.map((court) {
-      return HomePriceRow(
-        courtLabel: _courtLabel(court),
-        description: _courtDescription(court),
-        fixedPrice: _fixedPrice(court),
-        accountPrice: _accountPrice(court),
-        guestPrice: _guestPrice(court),
-      );
-    }).toList();
+    final band = selectedPriceBand;
+    return courts
+        .map(
+          (court) => HomePriceRow(
+            courtLabel: _courtLabel(court),
+            description: _courtDescription(court),
+            fixedPrice: _fixedPrice(court, band),
+            accountPrice: _accountPrice(court, band),
+            guestPrice: _guestPrice(court, band),
+          ),
+        )
+        .toList();
   }
 
   String formatMoney(num value) {
@@ -144,6 +178,27 @@ class HomeController extends GetxController {
         );
   }
 
+  void _watchUnreadNotifications() {
+    final userId = _authRepository.currentUserId;
+    if (userId == null || userId.isEmpty) {
+      unreadNotificationCount.value = 0;
+      return;
+    }
+
+    _notificationsSub = _notificationRepository
+        .watchUserNotifications(userId)
+        .listen(
+          (items) {
+            unreadNotificationCount.value = items
+                .where((item) => !item.isRead)
+                .length;
+          },
+          onError: (_) {
+            unreadNotificationCount.value = 0;
+          },
+        );
+  }
+
   String _courtLabel(CourtModel court) {
     if (court.name.isNotEmpty) {
       return court.name;
@@ -165,29 +220,39 @@ class HomeController extends GetxController {
     return parts.isEmpty ? 'Đang hoạt động' : parts.join(' - ');
   }
 
-  double _fixedPrice(CourtModel court) {
+  double _fixedPrice(CourtModel court, HomePriceBand band) {
     return _firstPositive([
+      _priceByKeys(court, [
+        '${band.keyPrefix}.fixed',
+        '${band.dayPrefix}.fixed',
+        'fixed',
+        'fixedSchedule',
+        'fixedSchedulePrice',
+      ]),
       court.fixedSchedulePrice,
-      _priceByKeys(court, ['fixed', 'fixedSchedule', 'fixedSchedulePrice']),
       court.basePrice,
     ]);
   }
 
-  double _accountPrice(CourtModel court) {
-    final dayPrefix = selectedDayIndex.value == 0 ? 'weekday' : 'weekend';
+  double _accountPrice(CourtModel court, HomePriceBand band) {
     return _firstPositive([
-      _priceByKeys(court, ['$dayPrefix.account', '${dayPrefix}Account']),
-      _priceByKeys(court, ['$dayPrefix.base', '${dayPrefix}Base']),
+      _priceByKeys(court, [
+        '${band.keyPrefix}.account',
+        '${band.dayPrefix}.account',
+        '${band.dayPrefix}Account',
+      ]),
       court.basePrice,
       _averageHourlyPrice(court),
     ]);
   }
 
-  double _guestPrice(CourtModel court) {
-    final dayPrefix = selectedDayIndex.value == 0 ? 'weekday' : 'weekend';
+  double _guestPrice(CourtModel court, HomePriceBand band) {
     return _firstPositive([
-      _priceByKeys(court, ['$dayPrefix.guest', '${dayPrefix}Guest']),
-      _priceByKeys(court, ['$dayPrefix.peak', '${dayPrefix}Peak']),
+      _priceByKeys(court, [
+        '${band.keyPrefix}.guest',
+        '${band.dayPrefix}.guest',
+        '${band.dayPrefix}Guest',
+      ]),
       court.peakPrice,
       court.basePrice,
       _averageHourlyPrice(court),
@@ -226,8 +291,62 @@ class HomeController extends GetxController {
   @override
   void onClose() {
     _userSub?.cancel();
+    _notificationsSub?.cancel();
     super.onClose();
   }
+}
+
+class HomePriceBand {
+  const HomePriceBand({
+    required this.dayPrefix,
+    required this.keyPrefix,
+    required this.timeLabel,
+  });
+
+  final String dayPrefix;
+  final String keyPrefix;
+  final String timeLabel;
+
+  static const weekdayBands = <HomePriceBand>[
+    HomePriceBand(
+      dayPrefix: 'weekday',
+      keyPrefix: 'weekday.morning',
+      timeLabel: '05:00 - 09:00',
+    ),
+    HomePriceBand(
+      dayPrefix: 'weekday',
+      keyPrefix: 'weekday.base',
+      timeLabel: '09:00 - 16:00',
+    ),
+    HomePriceBand(
+      dayPrefix: 'weekday',
+      keyPrefix: 'weekday.peak',
+      timeLabel: '16:00 - 22:00',
+    ),
+    HomePriceBand(
+      dayPrefix: 'weekday',
+      keyPrefix: 'late',
+      timeLabel: '22:00 - 24:00',
+    ),
+  ];
+
+  static const weekendBands = <HomePriceBand>[
+    HomePriceBand(
+      dayPrefix: 'weekend',
+      keyPrefix: 'weekend.base',
+      timeLabel: '05:00 - 16:00',
+    ),
+    HomePriceBand(
+      dayPrefix: 'weekend',
+      keyPrefix: 'weekend.peak',
+      timeLabel: '16:00 - 22:00',
+    ),
+    HomePriceBand(
+      dayPrefix: 'weekend',
+      keyPrefix: 'late',
+      timeLabel: '22:00 - 24:00',
+    ),
+  ];
 }
 
 class HomePriceRow {

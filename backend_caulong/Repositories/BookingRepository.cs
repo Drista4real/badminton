@@ -6,6 +6,10 @@ namespace backend_caulong.Repositories;
 
 public sealed class BookingRepository : IBookingRepository
 {
+    private const int FixedAbsenceMonthlyLimit = 2;
+    private const double VndPerRewardPoint = 10000d;
+    private static readonly TimeZoneInfo BusinessTimeZone = ResolveBusinessTimeZone();
+
     private readonly FirestoreDb _firestoreDb;
     private readonly IConfiguration _configuration;
     private readonly ICancellationPolicyService _cancellationPolicyService;
@@ -593,6 +597,399 @@ public sealed class BookingRepository : IBookingRepository
         return result ?? throw new InvalidOperationException("Could not cancel booking order.");
     }
 
+    public async Task<ReportFixedAbsenceWriteResult> ReportFixedAbsenceAsync(
+        ReportFixedAbsenceWriteRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var trimmedUserId = request.UserId.Trim();
+        var trimmedBookingId = request.BookingId.Trim();
+        var bookingRef = _firestoreDb.Collection("bookings").Document(trimmedBookingId);
+        ReportFixedAbsenceWriteResult? result = null;
+
+        await _firestoreDb.RunTransactionAsync(async transaction =>
+        {
+            var bookingSnapshot = await transaction.GetSnapshotAsync(bookingRef, cancellationToken);
+            if (!bookingSnapshot.Exists)
+            {
+                throw new OrderNotFoundException(trimmedBookingId);
+            }
+
+            var booking = bookingSnapshot.ConvertTo<BookingDocument>();
+            if (!string.Equals(booking.UserId, trimmedUserId, StringComparison.Ordinal))
+            {
+                throw new OrderForbiddenException(trimmedBookingId);
+            }
+
+            if (!string.Equals(booking.BookingType, BookingTypes.Fixed, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new FixedAbsenceWriteNotAllowedException("Chỉ lịch cố định mới được báo nghỉ từng buổi.");
+            }
+
+            if (string.Equals(booking.Status, BookingStatuses.CancelledByUserFixed, StringComparison.OrdinalIgnoreCase))
+            {
+                var existingRefundAmount = GetDouble(bookingSnapshot, "refundedAmount");
+                result = new ReportFixedAbsenceWriteResult(
+                    trimmedBookingId,
+                    booking.OrderId,
+                    existingRefundAmount,
+                    GetInt(bookingSnapshot, "absenceCountThisMonth"),
+                    Refunded: false);
+                return;
+            }
+
+            if (!string.Equals(booking.Status, BookingStatuses.Confirmed, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new FixedAbsenceWriteNotAllowedException("Buổi này không ở trạng thái đã xác nhận nên không thể báo nghỉ.");
+            }
+
+            var nowUtc = DateTime.UtcNow;
+            var sessionStartUtc = GetBookingSessionUtc(booking, booking.StartTime);
+            if (sessionStartUtc - nowUtc <= TimeSpan.FromHours(24))
+            {
+                throw new FixedAbsenceWriteNotAllowedException("Bạn chỉ có thể báo nghỉ trước giờ chơi ít nhất 24 giờ.");
+            }
+
+            var absenceMonth = ToBusinessMonth(booking.Date);
+            var monthlyAbsenceQuery = _firestoreDb
+                .Collection("bookings")
+                .WhereEqualTo("userId", trimmedUserId)
+                .WhereEqualTo("bookingType", BookingTypes.Fixed)
+                .WhereEqualTo("absenceMonth", absenceMonth)
+                .WhereEqualTo("status", BookingStatuses.CancelledByUserFixed);
+            var monthlyAbsenceSnapshot = await transaction.GetSnapshotAsync(monthlyAbsenceQuery, cancellationToken);
+            var currentMonthlyCount = monthlyAbsenceSnapshot.Documents.Count(document => document.Exists);
+            if (currentMonthlyCount >= FixedAbsenceMonthlyLimit)
+            {
+                throw new MonthlyFixedAbsenceLimitExceededException();
+            }
+
+            var orderRef = _firestoreDb.Collection("orders").Document(booking.OrderId);
+            var orderSnapshot = await transaction.GetSnapshotAsync(orderRef, cancellationToken);
+            if (!orderSnapshot.Exists)
+            {
+                throw new OrderNotFoundException(booking.OrderId);
+            }
+
+            var orderBookings = await GetOrderBookingSnapshotsAsync(
+                transaction,
+                orderSnapshot,
+                cancellationToken);
+            var refundAmount = CalculatePerBookingMoneyAmount(orderSnapshot, orderBookings);
+            if (refundAmount <= 0)
+            {
+                throw new FixedAbsenceWriteNotAllowedException("Không xác định được số tiền hoàn của buổi này.");
+            }
+
+            var now = Timestamp.FromDateTime(nowUtc);
+            var refundTransactionRef = _firestoreDb
+                .Collection("walletTransactions")
+                .Document($"refund_fixed_absence_{SanitizeDocumentId(trimmedBookingId)}");
+            var refundTransactionSnapshot = await transaction.GetSnapshotAsync(refundTransactionRef, cancellationToken);
+            var refundAlreadyExists = refundTransactionSnapshot.Exists;
+
+            if (!refundAlreadyExists)
+            {
+                CreditWallet(
+                    transaction,
+                    trimmedUserId,
+                    refundAmount,
+                    refundTransactionRef,
+                    sourceOrderId: booking.OrderId,
+                    provider: "fixed_absence",
+                    description: "Hoàn tiền báo nghỉ buổi cố định",
+                    now,
+                    cancellationToken);
+            }
+
+            transaction.Set(bookingRef, new Dictionary<string, object>
+            {
+                ["status"] = BookingStatuses.CancelledByUserFixed,
+                ["orderStatus"] = OrderStatuses.Confirmed,
+                ["paymentStatus"] = "refunded_to_wallet",
+                ["cancelledReason"] = "fixed_absence",
+                ["absenceMonth"] = absenceMonth,
+                ["absenceCountThisMonth"] = currentMonthlyCount + 1,
+                ["refundedAmount"] = refundAmount,
+                ["refundMethod"] = "wallet",
+                ["cancelledAt"] = now,
+                ["updatedAt"] = now,
+            }, SetOptions.MergeAll);
+
+            DeleteBookingSlotLocks(transaction, new[] { bookingSnapshot });
+
+            result = new ReportFixedAbsenceWriteResult(
+                trimmedBookingId,
+                booking.OrderId,
+                refundAmount,
+                currentMonthlyCount + 1,
+                Refunded: !refundAlreadyExists);
+        }, cancellationToken: cancellationToken);
+
+        return result ?? throw new InvalidOperationException("Could not report fixed absence.");
+    }
+
+    public async Task<CancelOrderWithRefundWriteResult> CancelOrderWithRefundAsync(
+        CancelOrderWithRefundWriteRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var trimmedUserId = request.UserId.Trim();
+        var trimmedOrderId = request.OrderId.Trim();
+        var refundMethod = NormalizeRefundMethod(request.RefundMethod);
+        var orderRef = _firestoreDb.Collection("orders").Document(trimmedOrderId);
+        CancelOrderWithRefundWriteResult? result = null;
+
+        await _firestoreDb.RunTransactionAsync(async transaction =>
+        {
+            var orderSnapshot = await transaction.GetSnapshotAsync(orderRef, cancellationToken);
+            if (!orderSnapshot.Exists)
+            {
+                throw new OrderNotFoundException(trimmedOrderId);
+            }
+
+            var orderUserId = GetString(orderSnapshot, "userId");
+            if (!string.Equals(orderUserId, trimmedUserId, StringComparison.Ordinal))
+            {
+                throw new OrderForbiddenException(trimmedOrderId);
+            }
+
+            var status = GetString(orderSnapshot, "status");
+            if (!string.Equals(status, OrderStatuses.Confirmed, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new CancelBookingWriteNotAllowedException(trimmedOrderId, status);
+            }
+
+            if (refundMethod == "bank"
+                && (string.IsNullOrWhiteSpace(request.BankName)
+                    || string.IsNullOrWhiteSpace(request.BankAccountNumber)
+                    || string.IsNullOrWhiteSpace(request.BankAccountName)))
+            {
+                throw new ArgumentException("Thông tin ngân hàng là bắt buộc khi chọn hoàn tiền chuyển khoản.");
+            }
+
+            var paidAt = GetTimestamp(orderSnapshot, "paidAt")
+                ?? GetTimestamp(orderSnapshot, "confirmedAt")
+                ?? throw new FixedAbsenceWriteNotAllowedException("Đơn chưa có thời điểm thanh toán hợp lệ.");
+            var elapsed = DateTime.UtcNow - paidAt.ToDateTime();
+            var refundRate = elapsed <= TimeSpan.FromHours(5) ? 0.5d : 0.25d;
+            var paidMoneyAmount = CalculatePaidMoneyAmount(orderSnapshot);
+            var refundAmount = NormalizeMoney(paidMoneyAmount * refundRate);
+            if (refundAmount <= 0)
+            {
+                throw new FixedAbsenceWriteNotAllowedException("Không xác định được số tiền hoàn của đơn này.");
+            }
+
+            var bookingSnapshots = await GetOrderBookingSnapshotsAsync(
+                transaction,
+                orderSnapshot,
+                cancellationToken);
+            var bookingIds = bookingSnapshots
+                .Where(snapshot => snapshot.Exists)
+                .Select(snapshot => snapshot.Reference.Id)
+                .ToArray();
+            var now = Timestamp.FromDateTime(DateTime.UtcNow);
+            var nextStatus = refundMethod == "wallet"
+                ? OrderStatuses.Cancelled
+                : OrderStatuses.RefundPending;
+            var nextBookingStatus = refundMethod == "wallet"
+                ? BookingStatuses.Cancelled
+                : BookingStatuses.RefundPending;
+            var paymentStatus = refundMethod == "wallet"
+                ? "refunded_to_wallet"
+                : "refund_pending";
+
+            DocumentReference? refundTransactionRef = null;
+            DocumentSnapshot? refundTransactionSnapshot = null;
+            if (refundMethod == "wallet")
+            {
+                refundTransactionRef = _firestoreDb
+                    .Collection("walletTransactions")
+                    .Document($"refund_cancel_order_{SanitizeDocumentId(trimmedOrderId)}");
+                refundTransactionSnapshot = await transaction.GetSnapshotAsync(refundTransactionRef, cancellationToken);
+            }
+
+            transaction.Set(orderRef, new Dictionary<string, object>
+            {
+                ["status"] = nextStatus,
+                ["orderStatus"] = nextStatus,
+                ["paymentStatus"] = paymentStatus,
+                ["cancelledReason"] = "user_cancelled",
+                ["refundMethod"] = refundMethod,
+                ["refundRate"] = refundRate,
+                ["refundAmount"] = refundAmount,
+                ["refundStatus"] = refundMethod == "wallet" ? "completed" : "pending",
+                ["refundRequestedAt"] = now,
+                ["cancelledAt"] = now,
+                ["updatedAt"] = now,
+                ["bankName"] = request.BankName?.Trim() ?? string.Empty,
+                ["bankAccountNumber"] = request.BankAccountNumber?.Trim() ?? string.Empty,
+                ["bankAccountName"] = request.BankAccountName?.Trim() ?? string.Empty,
+            }, SetOptions.MergeAll);
+
+            foreach (var bookingSnapshot in bookingSnapshots.Where(snapshot => snapshot.Exists))
+            {
+                transaction.Set(bookingSnapshot.Reference, new Dictionary<string, object>
+                {
+                    ["status"] = nextBookingStatus,
+                    ["orderStatus"] = nextStatus,
+                    ["paymentStatus"] = paymentStatus,
+                    ["cancelledReason"] = "user_cancelled",
+                    ["refundMethod"] = refundMethod,
+                    ["refundAmount"] = refundAmount,
+                    ["refundStatus"] = refundMethod == "wallet" ? "completed" : "pending",
+                    ["cancelledAt"] = now,
+                    ["updatedAt"] = now,
+                }, SetOptions.MergeAll);
+            }
+
+            DeleteBookingSlotLocks(transaction, bookingSnapshots);
+
+            var refundedToWallet = false;
+            if (refundMethod == "wallet")
+            {
+                if (refundTransactionRef is not null && refundTransactionSnapshot?.Exists != true)
+                {
+                    CreditWallet(
+                        transaction,
+                        trimmedUserId,
+                        refundAmount,
+                        refundTransactionRef,
+                        sourceOrderId: trimmedOrderId,
+                        provider: "booking_cancellation",
+                        description: "Hoàn tiền do hủy sân",
+                        now,
+                        cancellationToken);
+                    refundedToWallet = true;
+                }
+            }
+
+            result = new CancelOrderWithRefundWriteResult(
+                trimmedOrderId,
+                bookingIds,
+                nextStatus,
+                refundMethod,
+                refundAmount,
+                refundRate,
+                refundedToWallet);
+        }, cancellationToken: cancellationToken);
+
+        return result ?? throw new InvalidOperationException("Could not cancel order with refund.");
+    }
+
+    public async Task<int> CompleteDueFixedBookingsAsync(
+        DateTime nowUtc,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedNowUtc = nowUtc.Kind == DateTimeKind.Utc
+            ? nowUtc
+            : DateTime.SpecifyKind(nowUtc, DateTimeKind.Utc);
+        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(normalizedNowUtc, BusinessTimeZone));
+        var dueDate = ToUtcDateTimestamp(today);
+        var snapshot = await _firestoreDb
+            .Collection("bookings")
+            .WhereEqualTo("bookingType", BookingTypes.Fixed)
+            .WhereEqualTo("status", BookingStatuses.Confirmed)
+            .WhereLessThanOrEqualTo("date", dueDate)
+            .Limit(pageSize)
+            .GetSnapshotAsync(cancellationToken);
+
+        var completedCount = 0;
+        foreach (var document in snapshot.Documents.Where(document => document.Exists))
+        {
+            var booking = document.ConvertTo<BookingDocument>();
+            if (GetBookingSessionUtc(booking, booking.EndTime) > normalizedNowUtc)
+            {
+                continue;
+            }
+
+            if (await CompleteFixedBookingIfDueAsync(document.Reference.Id, normalizedNowUtc, cancellationToken))
+            {
+                completedCount++;
+            }
+        }
+
+        return completedCount;
+    }
+
+    private async Task<bool> CompleteFixedBookingIfDueAsync(
+        string bookingId,
+        DateTime nowUtc,
+        CancellationToken cancellationToken)
+    {
+        var bookingRef = _firestoreDb.Collection("bookings").Document(bookingId.Trim());
+        var completed = false;
+
+        await _firestoreDb.RunTransactionAsync(async transaction =>
+        {
+            var bookingSnapshot = await transaction.GetSnapshotAsync(bookingRef, cancellationToken);
+            if (!bookingSnapshot.Exists)
+            {
+                return;
+            }
+
+            var booking = bookingSnapshot.ConvertTo<BookingDocument>();
+            if (!string.Equals(booking.Status, BookingStatuses.Confirmed, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(booking.BookingType, BookingTypes.Fixed, StringComparison.OrdinalIgnoreCase)
+                || GetBookingSessionUtc(booking, booking.EndTime) > nowUtc)
+            {
+                return;
+            }
+
+            var orderRef = _firestoreDb.Collection("orders").Document(booking.OrderId);
+            var orderSnapshot = await transaction.GetSnapshotAsync(orderRef, cancellationToken);
+            if (!orderSnapshot.Exists)
+            {
+                return;
+            }
+
+            var orderBookings = await GetOrderBookingSnapshotsAsync(
+                transaction,
+                orderSnapshot,
+                cancellationToken);
+            var sessionAmount = CalculatePerBookingMoneyAmount(orderSnapshot, orderBookings);
+            var points = Math.Max(0, (int)Math.Floor(sessionAmount / VndPerRewardPoint));
+            var now = Timestamp.FromDateTime(nowUtc);
+
+            if (points > 0 && !GetBool(bookingSnapshot, "rewardPointsGranted"))
+            {
+                var userRef = _firestoreDb.Collection("users").Document(booking.UserId);
+                transaction.Set(userRef, new Dictionary<string, object>
+                {
+                    ["points"] = FieldValue.Increment(points),
+                    ["loyaltyPoints"] = FieldValue.Increment(points),
+                    ["rewardPoints"] = FieldValue.Increment(points),
+                    ["updatedAt"] = now,
+                }, SetOptions.MergeAll);
+            }
+
+            transaction.Set(bookingRef, new Dictionary<string, object>
+            {
+                ["status"] = BookingStatuses.Completed,
+                ["orderStatus"] = OrderStatuses.Confirmed,
+                ["completedAt"] = now,
+                ["rewardPoints"] = points,
+                ["rewardPointsGranted"] = true,
+                ["rewardPointsGrantedAt"] = now,
+                ["updatedAt"] = now,
+            }, SetOptions.MergeAll);
+
+            if (!HasOpenSiblingBooking(orderBookings, bookingRef.Id))
+            {
+                transaction.Set(orderRef, new Dictionary<string, object>
+                {
+                    ["status"] = OrderStatuses.Completed,
+                    ["orderStatus"] = OrderStatuses.Completed,
+                    ["completedAt"] = now,
+                    ["updatedAt"] = now,
+                }, SetOptions.MergeAll);
+            }
+
+            completed = true;
+        }, cancellationToken: cancellationToken);
+
+        return completed;
+    }
+
     private Query BuildBlockingBookingsQuery(
         string courtId,
         Timestamp date,
@@ -839,6 +1236,146 @@ public sealed class BookingRepository : IBookingRepository
             || string.Equals(status, OrderStatuses.Confirmed, StringComparison.OrdinalIgnoreCase);
     }
 
+    private static string NormalizeRefundMethod(string value)
+    {
+        var normalized = value.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "wallet" => "wallet",
+            "bank" => "bank",
+            _ => throw new ArgumentException("refundMethod must be wallet or bank."),
+        };
+    }
+
+    private void CreditWallet(
+        Transaction transaction,
+        string userId,
+        double amount,
+        DocumentReference walletTransactionRef,
+        string sourceOrderId,
+        string provider,
+        string description,
+        Timestamp now,
+        CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        var normalizedAmount = NormalizeMoney(amount);
+        var userRef = _firestoreDb.Collection("users").Document(userId.Trim());
+        transaction.Set(userRef, new Dictionary<string, object>
+        {
+            ["walletBalance"] = FieldValue.Increment(normalizedAmount),
+            ["availableBalance"] = FieldValue.Increment(normalizedAmount),
+            ["updatedAt"] = now,
+        }, SetOptions.MergeAll);
+
+        transaction.Set(walletTransactionRef, new WalletTransactionDocument
+        {
+            UserId = userId.Trim(),
+            Amount = normalizedAmount,
+            Type = WalletTransactionTypes.Refund,
+            Status = WalletTransactionStatuses.Completed,
+            SourceOrderId = sourceOrderId,
+            Provider = provider,
+            Description = description,
+            CreatedAt = now,
+        });
+    }
+
+    private static double CalculatePerBookingMoneyAmount(
+        DocumentSnapshot orderSnapshot,
+        IReadOnlyList<DocumentSnapshot> bookingSnapshots)
+    {
+        var paidMoney = CalculatePaidMoneyAmount(orderSnapshot);
+        var billableBookingCount = bookingSnapshots.Count(snapshot => snapshot.Exists);
+
+        if (billableBookingCount <= 0)
+        {
+            billableBookingCount = Math.Max(1, bookingSnapshots.Count(snapshot => snapshot.Exists));
+        }
+
+        return NormalizeMoney(paidMoney / billableBookingCount);
+    }
+
+    private static double CalculatePaidMoneyAmount(DocumentSnapshot orderSnapshot)
+    {
+        var paidAmount = NormalizeMoney(GetDouble(orderSnapshot, "paidAmount"));
+        var walletDiscount = NormalizeMoney(GetDouble(orderSnapshot, "appWalletDiscount"));
+        var totalPrice = NormalizeMoney(GetDouble(orderSnapshot, "totalPrice"));
+        var originalTotal = NormalizeMoney(GetDouble(orderSnapshot, "originalTotalPrice"));
+
+        if (paidAmount > 0)
+        {
+            return paidAmount;
+        }
+
+        if (originalTotal > 0 && totalPrice <= 0)
+        {
+            return Math.Max(0d, originalTotal - NormalizeMoney(GetDouble(orderSnapshot, "appPointDiscount")));
+        }
+
+        return Math.Max(0d, totalPrice + walletDiscount);
+    }
+
+    private static bool HasOpenSiblingBooking(
+        IReadOnlyList<DocumentSnapshot> orderBookings,
+        string completedBookingId)
+    {
+        return orderBookings.Any(snapshot =>
+            snapshot.Exists
+            && !string.Equals(snapshot.Reference.Id, completedBookingId, StringComparison.Ordinal)
+            && IsOpenBookingStatus(GetString(snapshot, "status")));
+    }
+
+    private static bool IsOpenBookingStatus(string status)
+    {
+        return string.Equals(status, BookingStatuses.Pending, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, BookingStatuses.Confirmed, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static DateTime GetBookingSessionUtc(BookingDocument booking, int minutesFromMidnight)
+    {
+        var date = ToUtcDateOnly(booking.Date);
+        var localDateTime = new DateTime(
+            date.Year,
+            date.Month,
+            date.Day,
+            minutesFromMidnight / 60,
+            minutesFromMidnight % 60,
+            0,
+            DateTimeKind.Unspecified);
+        return TimeZoneInfo.ConvertTimeToUtc(localDateTime, BusinessTimeZone);
+    }
+
+    private static string ToBusinessMonth(Timestamp bookingDate)
+    {
+        var localDate = TimeZoneInfo.ConvertTimeFromUtc(bookingDate.ToDateTime(), BusinessTimeZone);
+        return localDate.ToString("yyyy-MM");
+    }
+
+    private static TimeZoneInfo ResolveBusinessTimeZone()
+    {
+        foreach (var timeZoneId in new[] { "SE Asia Standard Time", "Asia/Ho_Chi_Minh" })
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+            }
+            catch (TimeZoneNotFoundException)
+            {
+            }
+            catch (InvalidTimeZoneException)
+            {
+            }
+        }
+
+        return TimeZoneInfo.Utc;
+    }
+
+    private static double NormalizeMoney(double value)
+    {
+        return Math.Round(value, 0, MidpointRounding.AwayFromZero);
+    }
+
     private static Timestamp ToUtcDateTimestamp(DateOnly date)
     {
         var normalized = new DateTime(date.Year, date.Month, date.Day, 0, 0, 0, DateTimeKind.Utc);
@@ -962,6 +1499,16 @@ public sealed class BookingRepository : IBookingRepository
                     .Document(BuildSlotLockId(booking.CourtId, ToUtcDateOnly(booking.Date), slotStart))))
             .DistinctBy(reference => reference.Path)
             .ToArray();
+    }
+
+    private void DeleteBookingSlotLocks(
+        Transaction transaction,
+        IEnumerable<DocumentSnapshot> bookingSnapshots)
+    {
+        foreach (var slotLockRef in BuildSlotLockRefs(bookingSnapshots))
+        {
+            transaction.Delete(slotLockRef);
+        }
     }
 
     private static IEnumerable<int> EnumerateSlotStarts(int startTime, int endTime)
@@ -1256,6 +1803,40 @@ public sealed class BookingRepository : IBookingRepository
 
         var value = snapshot.GetValue<object>(field);
         return value is bool boolValue && boolValue;
+    }
+
+    private static int GetInt(DocumentSnapshot snapshot, string field)
+    {
+        if (!snapshot.Exists || !snapshot.ContainsField(field))
+        {
+            return 0;
+        }
+
+        var value = snapshot.GetValue<object>(field);
+        return value switch
+        {
+            int intValue => intValue,
+            long longValue => (int)longValue,
+            double doubleValue => (int)doubleValue,
+            _ => 0,
+        };
+    }
+
+    private static double GetDouble(DocumentSnapshot snapshot, string field)
+    {
+        if (!snapshot.Exists || !snapshot.ContainsField(field))
+        {
+            return 0;
+        }
+
+        var value = snapshot.GetValue<object>(field);
+        return value switch
+        {
+            double doubleValue => doubleValue,
+            long longValue => longValue,
+            int intValue => intValue,
+            _ => 0,
+        };
     }
 
     private static Timestamp? GetTimestamp(DocumentSnapshot snapshot, string field)

@@ -55,6 +55,60 @@ class UserRepository {
     return _users.doc(userId.trim()).update(data);
   }
 
+  Future<void> updateUserProfileWithUniquePhone(
+    String userId,
+    Map<String, dynamic> updates, {
+    required String phoneNumber,
+    String? previousPhoneNumber,
+  }) async {
+    final trimmedUserId = userId.trim();
+    final normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
+    final normalizedPreviousPhoneNumber =
+        previousPhoneNumber?.trim().isNotEmpty == true
+        ? normalizePhoneNumber(previousPhoneNumber!)
+        : null;
+
+    final userRef = _users.doc(trimmedUserId);
+    final phoneRef = _firestore
+        .collection('phoneNumbers')
+        .doc(normalizedPhoneNumber);
+    final previousPhoneRef =
+        normalizedPreviousPhoneNumber != null &&
+            normalizedPreviousPhoneNumber != normalizedPhoneNumber
+        ? _firestore
+              .collection('phoneNumbers')
+              .doc(normalizedPreviousPhoneNumber)
+        : null;
+    final data = Map<String, dynamic>.from(updates)
+      ..removeWhere((_, value) => value == null);
+    data['phoneNumber'] = normalizedPhoneNumber;
+    data['updatedAt'] = FieldValue.serverTimestamp();
+
+    await _firestore.runTransaction((transaction) async {
+      final phoneSnapshot = await transaction.get(phoneRef);
+      final existingUserId = phoneSnapshot.data()?['userId'] as String?;
+      if (phoneSnapshot.exists && existingUserId != trimmedUserId) {
+        throw FirebaseException(
+          plugin: 'cloud_firestore',
+          code: 'phone-already-in-use',
+          message: 'Phone number is already in use.',
+        );
+      }
+
+      transaction.update(userRef, data);
+      transaction.set(phoneRef, {
+        'userId': trimmedUserId,
+        'phoneNumber': normalizedPhoneNumber,
+        'updatedAt': FieldValue.serverTimestamp(),
+        if (!phoneSnapshot.exists) 'createdAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      if (previousPhoneRef != null) {
+        transaction.delete(previousPhoneRef);
+      }
+    });
+  }
+
   Future<void> deleteUserProfile(String userId) {
     return _users.doc(userId.trim()).delete();
   }
@@ -69,5 +123,15 @@ class UserRepository {
   Map<String, dynamic> _normalizeForWrite(Map<String, dynamic> data) {
     return Map<String, dynamic>.from(data)
       ..removeWhere((_, value) => value == null);
+  }
+
+  static String normalizePhoneNumber(String value) {
+    var digits = value.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.startsWith('0084')) {
+      digits = '0${digits.substring(4)}';
+    } else if (digits.startsWith('84') && digits.length == 11) {
+      digits = '0${digits.substring(2)}';
+    }
+    return digits;
   }
 }

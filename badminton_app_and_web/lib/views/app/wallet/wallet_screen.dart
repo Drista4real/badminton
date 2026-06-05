@@ -28,7 +28,7 @@ class WalletScreen extends GetView<WalletController> {
 
                 return RefreshIndicator(
                   color: AppColors.primary,
-                  onRefresh: controller.refreshTransactions,
+                  onRefresh: controller.refreshWallet,
                   child: SingleChildScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
                     child: Column(
@@ -91,17 +91,20 @@ class _WalletHeader extends GetView<WalletController> {
               ),
             ),
           ),
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF0FAF9),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(
-              Icons.history_rounded,
-              color: AppColors.primary,
-              size: 20,
+          GestureDetector(
+            onTap: controller.refreshWallet,
+            child: Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0FAF9),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.refresh_rounded,
+                color: AppColors.primary,
+                size: 20,
+              ),
             ),
           ),
         ],

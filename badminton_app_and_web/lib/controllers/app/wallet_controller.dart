@@ -65,6 +65,11 @@ class WalletController extends GetxController {
   }
 
   void _bindWallet() {
+    _summarySub?.cancel();
+    _transactionsSub?.cancel();
+    isLoading.value = true;
+    errorMessage.value = '';
+
     _summarySub = _walletRepository
         .watchWalletSummary(userId)
         .listen(
@@ -109,6 +114,12 @@ class WalletController extends GetxController {
 
   void goBack() {
     Get.back<void>();
+  }
+
+  Future<void> refreshWallet() async {
+    errorMessage.value = '';
+    _bindWallet();
+    await refreshTransactions();
   }
 
   void resetWithdrawForm() {
@@ -243,8 +254,9 @@ class WalletController extends GetxController {
     try {
       final items = await _walletRepository.fetchWalletTransactions();
       transactions.assignAll(items);
+      errorMessage.value = '';
     } catch (_) {
-      errorMessage.value = 'KhÃ´ng táº£i Ä‘Æ°á»£c lá»‹ch sá»­ giao dá»‹ch.';
+      errorMessage.value = 'Không tải được lịch sử giao dịch.';
     }
   }
 

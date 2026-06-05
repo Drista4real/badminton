@@ -377,6 +377,7 @@ public sealed class OrderRepository : IOrderRepository
             .Collection("orders")
             .WhereEqualTo("status", OrderStatuses.Pending)
             .WhereLessThanOrEqualTo("createdAt", cutoff)
+            .OrderBy("createdAt")
             .Limit(pageSize)
             .GetSnapshotAsync(cancellationToken);
 

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -60,47 +62,60 @@ class ProfileScreen extends GetView<ProfileController> {
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
       child: Column(
         children: [
-          Stack(
-            children: [
-              Container(
-                width: 88,
-                height: 88,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: const LinearGradient(
-                    colors: [AppColors.primary, AppColors.secondary],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.primary.withValues(alpha: 0.28),
-                      blurRadius: 16,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: ClipOval(child: _buildAvatar()),
-              ),
-              Positioned(
-                bottom: 0,
-                right: 0,
-                child: Container(
-                  width: 28,
-                  height: 28,
+          GestureDetector(
+            onTap: controller.updateAvatarFromGallery,
+            child: Stack(
+              children: [
+                Container(
+                  width: 88,
+                  height: 88,
                   decoration: BoxDecoration(
-                    color: colors.primary,
                     shape: BoxShape.circle,
-                    border: Border.all(color: cardColor, width: 2),
+                    gradient: const LinearGradient(
+                      colors: [AppColors.primary, AppColors.secondary],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primary.withValues(alpha: 0.28),
+                        blurRadius: 16,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
                   ),
-                  child: const Icon(
-                    Icons.camera_alt_rounded,
-                    color: Colors.white,
-                    size: 14,
+                  child: ClipOval(child: _buildAvatar()),
+                ),
+                Positioned(
+                  bottom: 0,
+                  right: 0,
+                  child: Obx(
+                    () => Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: colors.primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: cardColor, width: 2),
+                      ),
+                      child: controller.isUpdatingAvatar.value
+                          ? const Padding(
+                              padding: EdgeInsets.all(6),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.camera_alt_rounded,
+                              color: Colors.white,
+                              size: 14,
+                            ),
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: 14),
           Text(
@@ -133,6 +148,27 @@ class ProfileScreen extends GetView<ProfileController> {
     final avatarUrl = controller.avatarUrl;
     if (avatarUrl == null) {
       return const Icon(Icons.person_rounded, color: Colors.white, size: 44);
+    }
+
+    if (avatarUrl.startsWith('data:image/')) {
+      final commaIndex = avatarUrl.indexOf(',');
+      if (commaIndex > 0) {
+        try {
+          return Image.memory(
+            base64Decode(avatarUrl.substring(commaIndex + 1)),
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) {
+              return const Icon(
+                Icons.person_rounded,
+                color: Colors.white,
+                size: 44,
+              );
+            },
+          );
+        } catch (_) {
+          return const Icon(Icons.person_rounded, color: Colors.white, size: 44);
+        }
+      }
     }
 
     return Image.network(

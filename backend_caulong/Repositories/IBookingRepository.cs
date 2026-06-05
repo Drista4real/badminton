@@ -22,6 +22,19 @@ public interface IBookingRepository
     Task<CancelBookingWriteResult> CancelOrderAsync(
         CancelBookingWriteRequest request,
         CancellationToken cancellationToken = default);
+
+    Task<ReportFixedAbsenceWriteResult> ReportFixedAbsenceAsync(
+        ReportFixedAbsenceWriteRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<CancelOrderWithRefundWriteResult> CancelOrderWithRefundAsync(
+        CancelOrderWithRefundWriteRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<int> CompleteDueFixedBookingsAsync(
+        DateTime nowUtc,
+        int pageSize,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record CreateBookingWriteRequest(
@@ -71,6 +84,34 @@ public sealed record CancelBookingWriteResult(
     string OrderId,
     IReadOnlyList<string> BookingIds);
 
+public sealed record ReportFixedAbsenceWriteRequest(
+    string UserId,
+    string BookingId);
+
+public sealed record ReportFixedAbsenceWriteResult(
+    string BookingId,
+    string OrderId,
+    double RefundedAmount,
+    int AbsenceCountThisMonth,
+    bool Refunded);
+
+public sealed record CancelOrderWithRefundWriteRequest(
+    string UserId,
+    string OrderId,
+    string RefundMethod,
+    string? BankName,
+    string? BankAccountNumber,
+    string? BankAccountName);
+
+public sealed record CancelOrderWithRefundWriteResult(
+    string OrderId,
+    IReadOnlyList<string> BookingIds,
+    string Status,
+    string RefundMethod,
+    double RefundAmount,
+    double RefundRate,
+    bool RefundedToWallet);
+
 public sealed class BookingSuspendedWriteException : Exception
 {
     public BookingSuspendedWriteException(
@@ -110,6 +151,22 @@ public sealed class CancelBookingWriteNotAllowedException : Exception
     public string OrderId { get; }
 
     public string Status { get; }
+}
+
+public sealed class FixedAbsenceWriteNotAllowedException : Exception
+{
+    public FixedAbsenceWriteNotAllowedException(string message)
+        : base(message)
+    {
+    }
+}
+
+public sealed class MonthlyFixedAbsenceLimitExceededException : Exception
+{
+    public MonthlyFixedAbsenceLimitExceededException()
+        : base("Khách cố định chỉ được báo nghỉ tối đa 02 buổi trong một tháng.")
+    {
+    }
 }
 
 public sealed class BookingWriteConflictException : Exception

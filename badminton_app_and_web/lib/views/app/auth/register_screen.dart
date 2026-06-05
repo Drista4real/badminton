@@ -99,6 +99,14 @@ class RegisterScreen extends GetView<AuthController> {
                     textInputAction: TextInputAction.next,
                     autofillHints: const [AutofillHints.email],
                   ),
+                  CustomTextField(
+                    controller: controller.registerPhoneController,
+                    hint: 'Số điện thoại',
+                    icon: Icons.phone_outlined,
+                    keyboardType: TextInputType.phone,
+                    textInputAction: TextInputAction.next,
+                    autofillHints: const [AutofillHints.telephoneNumber],
+                  ),
                   CustomPasswordTextField(
                     controller: controller.registerPasswordController,
                     hint: 'Mật khẩu',

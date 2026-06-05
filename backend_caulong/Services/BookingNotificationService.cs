@@ -10,6 +10,10 @@ public interface IBookingNotificationService
         string orderId,
         CancellationToken cancellationToken = default);
 
+    Task NotifyOrderCancelledAsync(
+        string orderId,
+        CancellationToken cancellationToken = default);
+
     Task DeletePendingFixedBookingNotificationAsync(
         string orderId,
         CancellationToken cancellationToken = default);
@@ -49,12 +53,24 @@ public sealed class BookingNotificationService : IBookingNotificationService
             return;
         }
 
-        var fixedBookings = await GetFixedBookingsAsync(
+        var bookings = await GetOrderBookingsAsync(
             orderSnapshot,
             trimmedOrderId,
             cancellationToken);
-        if (fixedBookings.Count == 0)
+        if (bookings.Count == 0)
         {
+            return;
+        }
+
+        var fixedBookings = bookings.Where(IsFixedBooking).ToArray();
+        if (fixedBookings.Length == 0)
+        {
+            await WriteOneTimeBookingConfirmedNotificationAsync(
+                trimmedOrderId,
+                userId,
+                orderSnapshot,
+                bookings[0],
+                cancellationToken);
             return;
         }
 
@@ -107,7 +123,7 @@ public sealed class BookingNotificationService : IBookingNotificationService
                 weekdays,
                 template.StartTime,
                 template.EndTime,
-                fixedBookings.Count,
+                fixedBookings.Length,
                 totalPrice),
             ["isRead"] = false,
             ["orderId"] = trimmedOrderId,
@@ -118,7 +134,7 @@ public sealed class BookingNotificationService : IBookingNotificationService
             ["fixedWeekdays"] = weekdays,
             ["startTime"] = template.StartTime,
             ["endTime"] = template.EndTime,
-            ["bookingCount"] = fixedBookings.Count,
+            ["bookingCount"] = fixedBookings.Length,
             ["totalPrice"] = totalPrice,
             ["createdAt"] = now,
             ["updatedAt"] = now,
@@ -127,7 +143,126 @@ public sealed class BookingNotificationService : IBookingNotificationService
         await DeletePendingFixedBookingNotificationAsync(trimmedOrderId, cancellationToken);
     }
 
-    private async Task<IReadOnlyList<BookingDocument>> GetFixedBookingsAsync(
+    public async Task NotifyOrderCancelledAsync(
+        string orderId,
+        CancellationToken cancellationToken = default)
+    {
+        var trimmedOrderId = orderId.Trim();
+        if (string.IsNullOrWhiteSpace(trimmedOrderId))
+        {
+            return;
+        }
+
+        var orderSnapshot = await _firestoreDb
+            .Collection("orders")
+            .Document(trimmedOrderId)
+            .GetSnapshotAsync(cancellationToken);
+        if (!orderSnapshot.Exists)
+        {
+            return;
+        }
+
+        var status = GetString(orderSnapshot, "status");
+        if (!string.Equals(status, OrderStatuses.Cancelled, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var userId = GetString(orderSnapshot, "userId");
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return;
+        }
+
+        var bookings = await GetOrderBookingsAsync(orderSnapshot, trimmedOrderId, cancellationToken);
+        if (bookings.Count == 0)
+        {
+            return;
+        }
+
+        var notificationRef = _firestoreDb
+            .Collection("notifications")
+            .Document($"booking_cancelled_{SanitizeDocumentId(trimmedOrderId)}");
+        var snapshot = await notificationRef.GetSnapshotAsync(cancellationToken);
+        if (snapshot.Exists)
+        {
+            return;
+        }
+
+        var template = bookings[0];
+        var fixedBookings = bookings.Where(IsFixedBooking).ToArray();
+        var isFixed = fixedBookings.Length > 0;
+        var courtLabel = await GetCourtLabelAsync(template.CourtId, cancellationToken);
+        var reason = GetString(orderSnapshot, "cancelledReason");
+        var title = string.Equals(reason, "payment_timeout", StringComparison.OrdinalIgnoreCase)
+            ? "Đơn đặt sân đã hết hạn"
+            : "Đơn đặt sân đã hủy";
+        var restrictionSuffix = await GetBookingDisabledSuffixAsync(userId, cancellationToken);
+        var message = (isFixed
+            ? BuildFixedBookingCancelledMessage(courtLabel, fixedBookings, reason)
+            : BuildOneTimeBookingCancelledMessage(courtLabel, template, reason)) + restrictionSuffix;
+        var now = Timestamp.FromDateTime(DateTime.UtcNow);
+
+        await notificationRef.SetAsync(new Dictionary<string, object?>
+        {
+            ["userId"] = userId,
+            ["type"] = "booking",
+            ["title"] = title,
+            ["message"] = message,
+            ["isRead"] = false,
+            ["orderId"] = trimmedOrderId,
+            ["bookingId"] = template.Id,
+            ["courtId"] = template.CourtId,
+            ["cancelledReason"] = reason,
+            ["bookingCount"] = bookings.Count,
+            ["createdAt"] = now,
+            ["updatedAt"] = now,
+        }, cancellationToken: cancellationToken);
+    }
+
+    private async Task WriteOneTimeBookingConfirmedNotificationAsync(
+        string orderId,
+        string userId,
+        DocumentSnapshot orderSnapshot,
+        BookingDocument booking,
+        CancellationToken cancellationToken)
+    {
+        var notificationRef = _firestoreDb
+            .Collection("notifications")
+            .Document($"booking_confirmed_{SanitizeDocumentId(orderId)}");
+        var notificationSnapshot = await notificationRef.GetSnapshotAsync(cancellationToken);
+        if (notificationSnapshot.Exists)
+        {
+            return;
+        }
+
+        var courtLabel = await GetCourtLabelAsync(booking.CourtId, cancellationToken);
+        var totalPrice = ResolveOrderTotal(orderSnapshot);
+        var now = Timestamp.FromDateTime(DateTime.UtcNow);
+
+        await notificationRef.SetAsync(new Dictionary<string, object?>
+        {
+            ["userId"] = userId,
+            ["type"] = "booking",
+            ["title"] = "Đặt sân đã thanh toán",
+            ["message"] = BuildOneTimeBookingConfirmedMessage(
+                courtLabel,
+                booking,
+                totalPrice),
+            ["isRead"] = false,
+            ["orderId"] = orderId,
+            ["bookingId"] = booking.Id,
+            ["courtId"] = booking.CourtId,
+            ["bookingDate"] = booking.Date,
+            ["startTime"] = booking.StartTime,
+            ["endTime"] = booking.EndTime,
+            ["totalPrice"] = totalPrice,
+            ["createdAt"] = now,
+            ["updatedAt"] = now,
+        }, cancellationToken: cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<BookingDocument>> GetOrderBookingsAsync(
         DocumentSnapshot orderSnapshot,
         string orderId,
         CancellationToken cancellationToken)
@@ -140,7 +275,7 @@ public sealed class BookingNotificationService : IBookingNotificationService
                 .Document(bookingId)
                 .GetSnapshotAsync(cancellationToken);
             var booking = TryConvertToBookingDocument(bookingSnapshot);
-            if (booking is not null && IsFixedBooking(booking))
+            if (booking is not null)
             {
                 bookings.Add(booking);
             }
@@ -162,7 +297,6 @@ public sealed class BookingNotificationService : IBookingNotificationService
         return bookingsSnapshot.Documents
             .Select(TryConvertToBookingDocument)
             .OfType<BookingDocument>()
-            .Where(IsFixedBooking)
             .OrderBy(booking => ToDateOnly(booking.Date))
             .ThenBy(booking => booking.StartTime)
             .ToArray();
@@ -243,6 +377,67 @@ public sealed class BookingNotificationService : IBookingNotificationService
             $"vào {weekdays}, giờ chơi {time}. Tổng {bookingCount} buổi, số tiền {amount} đ.";
     }
 
+    private static string BuildOneTimeBookingConfirmedMessage(
+        string courtLabel,
+        BookingDocument booking,
+        double totalPrice)
+    {
+        var bookingDate = ToDateOnly(booking.Date);
+        var date = bookingDate is null ? "ngày đã chọn" : FormatDate(bookingDate.Value);
+        var time = $"{FormatMinutes(booking.StartTime)} - {FormatMinutes(booking.EndTime)}";
+        var amount = totalPrice.ToString("N0", VietnameseCulture);
+
+        return
+            $"Bạn đã thanh toán thành công {courtLabel} ngày {date}, giờ chơi {time}. " +
+            $"Số tiền {amount} đ.";
+    }
+
+    private static string BuildOneTimeBookingCancelledMessage(
+        string courtLabel,
+        BookingDocument booking,
+        string reason)
+    {
+        var bookingDate = ToDateOnly(booking.Date);
+        var date = bookingDate is null ? "ngày đã chọn" : FormatDate(bookingDate.Value);
+        var time = $"{FormatMinutes(booking.StartTime)} - {FormatMinutes(booking.EndTime)}";
+        var suffix = string.Equals(reason, "payment_timeout", StringComparison.OrdinalIgnoreCase)
+            ? "Đơn đã tự hủy vì quá thời gian thanh toán. Vui lòng đặt lại nếu bạn vẫn muốn giữ khung giờ này."
+            : "Đơn đã được hủy theo yêu cầu của bạn.";
+
+        return $"{courtLabel} ngày {date}, giờ chơi {time}. {suffix}";
+    }
+
+    private static string BuildFixedBookingCancelledMessage(
+        string courtLabel,
+        IReadOnlyList<BookingDocument> fixedBookings,
+        string reason)
+    {
+        var template = fixedBookings[0];
+        var fixedStartDate = ToDateOnly(template.FixedStartDate) ?? ToDateOnly(template.Date);
+        var fixedEndDate = ToDateOnly(template.FixedEndDate) ?? fixedBookings
+            .Select(booking => ToDateOnly(booking.Date))
+            .OfType<DateOnly>()
+            .OrderBy(date => date)
+            .LastOrDefault();
+        var startDate = fixedStartDate is null ? "ngày bắt đầu đã chọn" : FormatDate(fixedStartDate.Value);
+        var endDate = fixedEndDate == default ? "ngày kết thúc đã chọn" : FormatDate(fixedEndDate);
+        var weekdays = template.FixedWeekdays.Count > 0
+            ? FormatWeekdays(template.FixedWeekdays)
+            : FormatWeekdays(
+                fixedBookings
+                    .Select(booking => ToApiDayOfWeek(ToDateOnly(booking.Date)?.DayOfWeek))
+                    .Where(day => day is not null)
+                    .Select(day => day!.Value));
+        var time = $"{FormatMinutes(template.StartTime)} - {FormatMinutes(template.EndTime)}";
+        var suffix = string.Equals(reason, "payment_timeout", StringComparison.OrdinalIgnoreCase)
+            ? "Lịch đã tự hủy vì quá thời gian thanh toán. Vui lòng đặt lại nếu còn nhu cầu."
+            : "Lịch đã được hủy theo yêu cầu của bạn.";
+
+        return
+            $"Lịch cố định {courtLabel} từ {startDate} đến {endDate}, vào {weekdays}, " +
+            $"giờ chơi {time}. {suffix}";
+    }
+
     private async Task<string> GetCourtLabelAsync(
         string courtId,
         CancellationToken cancellationToken)
@@ -274,6 +469,28 @@ public sealed class BookingNotificationService : IBookingNotificationService
             : $"sân {code}";
     }
 
+    private async Task<string> GetBookingDisabledSuffixAsync(
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await _firestoreDb
+            .Collection("users")
+            .Document(userId.Trim())
+            .GetSnapshotAsync(cancellationToken);
+        if (!snapshot.Exists || !snapshot.ContainsField("bookingDisabledUntil"))
+        {
+            return string.Empty;
+        }
+
+        var disabledUntil = snapshot.GetValue<Timestamp>("bookingDisabledUntil").ToDateTime();
+        if (disabledUntil <= DateTime.UtcNow)
+        {
+            return string.Empty;
+        }
+
+        return $" Tài khoản của bạn tạm khóa đặt sân đến {FormatDateTime(disabledUntil)} do hủy sân nhiều lần trong ngày.";
+    }
+
     private static double ResolveOrderTotal(DocumentSnapshot orderSnapshot)
     {
         var originalTotal = NormalizeMoney(GetDouble(orderSnapshot, "originalTotalPrice"));
@@ -285,6 +502,33 @@ public sealed class BookingNotificationService : IBookingNotificationService
     private static string FormatDate(DateOnly date)
     {
         return date.ToString("dd/MM/yyyy", VietnameseCulture);
+    }
+
+    private static string FormatDateTime(DateTime utcDateTime)
+    {
+        var localDateTime = TimeZoneInfo.ConvertTimeFromUtc(
+            DateTime.SpecifyKind(utcDateTime, DateTimeKind.Utc),
+            ResolveBusinessTimeZone());
+        return localDateTime.ToString("HH:mm dd/MM/yyyy", VietnameseCulture);
+    }
+
+    private static TimeZoneInfo ResolveBusinessTimeZone()
+    {
+        foreach (var timeZoneId in new[] { "SE Asia Standard Time", "Asia/Ho_Chi_Minh" })
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+            }
+            catch (TimeZoneNotFoundException)
+            {
+            }
+            catch (InvalidTimeZoneException)
+            {
+            }
+        }
+
+        return TimeZoneInfo.Utc;
     }
 
     private static string FormatWeekdays(IEnumerable<int> daysOfWeek)

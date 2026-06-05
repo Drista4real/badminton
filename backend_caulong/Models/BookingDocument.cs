@@ -65,4 +65,7 @@ public static class BookingStatuses
     public const string Confirmed = "confirmed";
     public const string Completed = "completed";
     public const string Cancelled = "cancelled";
+    public const string CancelledByUserFixed = "cancelled_by_user_fixed";
+    public const string RefundPending = "refund_pending";
+    public const string NoShow = "no_show";
 }

@@ -13,15 +13,18 @@ public sealed class BookingController : ControllerBase
 {
     private readonly IBookingTransactionService _bookingTransactionService;
     private readonly IBookingRepository _bookingRepository;
+    private readonly IBookingNotificationService _bookingNotificationService;
     private readonly ILogger<BookingController> _logger;
 
     public BookingController(
         IBookingTransactionService bookingTransactionService,
         IBookingRepository bookingRepository,
+        IBookingNotificationService bookingNotificationService,
         ILogger<BookingController> logger)
     {
         _bookingTransactionService = bookingTransactionService;
         _bookingRepository = bookingRepository;
+        _bookingNotificationService = bookingNotificationService;
         _logger = logger;
     }
 
@@ -296,6 +299,8 @@ public sealed class BookingController : ControllerBase
                 request,
                 cancellationToken);
 
+            await NotifyOrderCancelledAsync(result.OrderId, cancellationToken);
+
             return Ok(new
             {
                 orderId = result.OrderId,
@@ -330,6 +335,159 @@ public sealed class BookingController : ControllerBase
             return StatusCode(
                 StatusCodes.Status500InternalServerError,
                 new { message = "Could not cancel booking order." });
+        }
+    }
+
+    private async Task NotifyOrderCancelledAsync(
+        string orderId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _bookingNotificationService.NotifyOrderCancelledAsync(
+                orderId,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Cancelled order {OrderId}, but could not write cancellation notification.",
+                orderId);
+        }
+    }
+
+    [HttpPost("report-absence")]
+    [Authorize(AuthenticationSchemes = FirebaseAuthenticationHandler.SchemeName)]
+    public async Task<IActionResult> ReportAbsence(
+        [FromBody] ReportFixedAbsenceRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null)
+        {
+            return BadRequest(new { message = "Request body is required." });
+        }
+
+        try
+        {
+            var userId = User.GetFirebaseUserId();
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return Unauthorized(new { message = "Authenticated Firebase user id is required." });
+            }
+
+            var result = await _bookingTransactionService.ReportFixedAbsenceAsync(
+                userId,
+                request,
+                cancellationToken);
+
+            return Ok(new
+            {
+                bookingId = result.BookingId,
+                orderId = result.OrderId,
+                status = BookingStatuses.CancelledByUserFixed,
+                refundedAmount = result.RefundedAmount,
+                absenceCountThisMonth = result.AbsenceCountThisMonth,
+                refunded = result.Refunded,
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (OrderNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (OrderForbiddenException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+        }
+        catch (MonthlyFixedAbsenceLimitExceededException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (FixedAbsenceWriteNotAllowedException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Could not report fixed absence for booking {BookingId}.", request.BookingId);
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                new { message = "Could not report fixed absence." });
+        }
+    }
+
+    [HttpPost("cancel-with-refund")]
+    [Authorize(AuthenticationSchemes = FirebaseAuthenticationHandler.SchemeName)]
+    public async Task<IActionResult> CancelWithRefund(
+        [FromBody] CancelOrderWithRefundRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null)
+        {
+            return BadRequest(new { message = "Request body is required." });
+        }
+
+        try
+        {
+            var userId = User.GetFirebaseUserId();
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return Unauthorized(new { message = "Authenticated Firebase user id is required." });
+            }
+
+            var result = await _bookingTransactionService.CancelOrderWithRefundAsync(
+                userId,
+                request,
+                cancellationToken);
+
+            await NotifyOrderCancelledAsync(result.OrderId, cancellationToken);
+
+            return Ok(new
+            {
+                orderId = result.OrderId,
+                bookingIds = result.BookingIds,
+                status = result.Status,
+                refundMethod = result.RefundMethod,
+                refundAmount = result.RefundAmount,
+                refundRate = result.RefundRate,
+                refundedToWallet = result.RefundedToWallet,
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (OrderNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (OrderForbiddenException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+        }
+        catch (CancelBookingWriteNotAllowedException ex)
+        {
+            return BadRequest(new
+            {
+                message = ex.Message,
+                orderId = ex.OrderId,
+                status = ex.Status,
+            });
+        }
+        catch (FixedAbsenceWriteNotAllowedException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Could not cancel order {OrderId} with refund.", request.OrderId);
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                new { message = "Could not cancel booking order with refund." });
         }
     }
 

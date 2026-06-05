@@ -10,7 +10,9 @@ class NotificationBinding extends Bindings {
     if (!Get.isRegistered<AuthRepository>()) {
       Get.lazyPut<AuthRepository>(() => AuthRepository(), fenix: true);
     }
-    Get.lazyPut<NotificationRepository>(() => NotificationRepository());
+    if (!Get.isRegistered<NotificationRepository>()) {
+      Get.lazyPut<NotificationRepository>(() => NotificationRepository());
+    }
     Get.lazyPut<NotificationController>(
       () => NotificationController(
         notificationRepository: Get.find<NotificationRepository>(),

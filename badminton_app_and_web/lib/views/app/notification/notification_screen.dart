@@ -17,6 +17,7 @@ class NotificationScreen extends GetView<NotificationController> {
         child: Column(
           children: [
             _buildHeader(context),
+            _buildTabs(),
             Expanded(child: _buildList()),
           ],
         ),
@@ -89,6 +90,98 @@ class NotificationScreen extends GetView<NotificationController> {
     );
   }
 
+  Widget _buildTabs() {
+    return Container(
+      width: double.infinity,
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Obx(
+          () => Row(
+            children: List.generate(NotificationController.tabs.length, (
+              index,
+            ) {
+              final isSelected = controller.selectedTab.value == index;
+              final unreadCount = controller.unreadCountForTab(index);
+              return Padding(
+                padding: EdgeInsets.only(
+                  right: index == NotificationController.tabs.length - 1
+                      ? 0
+                      : 8,
+                ),
+                child: GestureDetector(
+                  onTap: () => controller.selectTab(index),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    height: 34,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? AppColors.primary
+                          : const Color(0xFFF0FAF9),
+                      borderRadius: BorderRadius.circular(17),
+                      border: Border.all(
+                        color: isSelected
+                            ? AppColors.primary
+                            : const Color(0xFFE2F3F1),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          NotificationController.tabs[index],
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: isSelected
+                                ? Colors.white
+                                : AppColors.primary,
+                          ),
+                        ),
+                        if (unreadCount > 0) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            constraints: const BoxConstraints(
+                              minWidth: 18,
+                              minHeight: 18,
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 5),
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? Colors.white
+                                  : Colors.red.shade50,
+                              borderRadius: BorderRadius.circular(9),
+                            ),
+                            child: Text(
+                              unreadCount > 99
+                                  ? '99+'
+                                  : unreadCount.toString(),
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                color: isSelected
+                                    ? AppColors.primary
+                                    : Colors.red,
+                                height: 1,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildList() {
     return Obx(() {
       if (controller.isLoading.value) {
@@ -99,7 +192,7 @@ class NotificationScreen extends GetView<NotificationController> {
         return _buildEmpty(controller.errorMessage.value);
       }
 
-      final items = controller.notifications;
+      final items = controller.filteredNotifications;
       if (items.isEmpty) {
         return _buildEmpty('notification.empty'.tr);
       }

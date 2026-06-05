@@ -39,4 +39,5 @@ public static class OrderStatuses
     public const string Confirmed = "confirmed";
     public const string Cancelled = "cancelled";
     public const string Completed = "completed";
+    public const string RefundPending = "refund_pending";
 }

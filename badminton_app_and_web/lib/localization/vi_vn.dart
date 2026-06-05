@@ -35,6 +35,7 @@ const Map<String, String> viVn = {
   'home.bookNow': 'Đặt sân ngay',
   'home.priceTitle': 'Bảng giá sân',
   'home.court': 'Sân',
+  'home.time': 'Giờ',
   'home.fixed': 'Cố định',
   'home.account': 'Tài khoản',
   'home.guest': 'Vãng lai',

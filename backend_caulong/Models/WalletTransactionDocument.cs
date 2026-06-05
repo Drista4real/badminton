@@ -49,6 +49,8 @@ public static class WalletTransactionTypes
 {
     public const string Refund = "refund";
     public const string Withdraw = "withdraw";
+    public const string Payment = "payment";
+    public const string Reward = "reward";
 }
 
 public static class WalletTransactionStatuses

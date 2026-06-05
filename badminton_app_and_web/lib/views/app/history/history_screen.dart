@@ -212,6 +212,46 @@ class _SingleBookingCard extends GetView<HistoryController> {
                 ),
                 const SizedBox(height: 10),
                 _PriceText(amount: booking.totalPrice),
+                Obx(() {
+                  final isProcessing = controller.processingBookingIds.contains(
+                    booking.id,
+                  );
+                  if (!controller.canCancelWithRefund(booking)) {
+                    return const SizedBox.shrink();
+                  }
+
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: OutlinedButton.icon(
+                      onPressed: isProcessing
+                          ? null
+                          : () => Get.bottomSheet<void>(
+                              _CancelRefundSheet(booking: booking),
+                              isScrollControlled: true,
+                              shape: const RoundedRectangleBorder(
+                                borderRadius: BorderRadius.vertical(
+                                  top: Radius.circular(24),
+                                ),
+                              ),
+                            ),
+                      icon: isProcessing
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.cancel_outlined, size: 18),
+                      label: Text(isProcessing ? 'Đang xử lý' : 'Hủy đơn'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFD32F2F),
+                        side: const BorderSide(color: Color(0xFFD32F2F)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
               ],
             ),
           ),
@@ -345,6 +385,131 @@ class _FixedBookingCard extends GetView<HistoryController> {
             );
           }),
         ],
+      ),
+    );
+  }
+}
+
+class _CancelRefundSheet extends StatefulWidget {
+  const _CancelRefundSheet({required this.booking});
+
+  final BookingModel booking;
+
+  @override
+  State<_CancelRefundSheet> createState() => _CancelRefundSheetState();
+}
+
+class _CancelRefundSheetState extends State<_CancelRefundSheet> {
+  var _refundMethod = 'wallet';
+  final _bankNameController = TextEditingController();
+  final _bankAccountNumberController = TextEditingController();
+  final _bankAccountNameController = TextEditingController();
+
+  @override
+  void dispose() {
+    _bankNameController.dispose();
+    _bankAccountNumberController.dispose();
+    _bankAccountNameController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = Get.find<HistoryController>();
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        16,
+        20,
+        MediaQuery.of(context).viewInsets.bottom + 28,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Hủy đơn đặt sân',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: AppColors.black,
+              ),
+            ),
+            const SizedBox(height: 12),
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(
+                  value: 'wallet',
+                  icon: Icon(Icons.account_balance_wallet_rounded),
+                  label: Text('Ví tiền'),
+                ),
+                ButtonSegment(
+                  value: 'bank',
+                  icon: Icon(Icons.account_balance_rounded),
+                  label: Text('Ngân hàng'),
+                ),
+              ],
+              selected: {_refundMethod},
+              onSelectionChanged: (values) {
+                setState(() => _refundMethod = values.first);
+              },
+            ),
+            if (_refundMethod == 'bank') ...[
+              const SizedBox(height: 14),
+              TextField(
+                controller: _bankNameController,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(labelText: 'Tên ngân hàng'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _bankAccountNumberController,
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(labelText: 'Số tài khoản'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _bankAccountNameController,
+                textInputAction: TextInputAction.done,
+                decoration: const InputDecoration(labelText: 'Tên chủ thẻ'),
+              ),
+            ],
+            const SizedBox(height: 20),
+            Obx(() {
+              final isProcessing = controller.processingBookingIds.contains(
+                widget.booking.id,
+              );
+
+              return CustomButton(
+                text: _refundMethod == 'wallet'
+                    ? 'Hoàn vào Ví tiền'
+                    : 'Gửi yêu cầu hoàn tiền',
+                isLoading: isProcessing,
+                onTap: () => controller.cancelBookingWithRefund(
+                  booking: widget.booking,
+                  refundMethod: _refundMethod,
+                  bankName: _bankNameController.text.trim(),
+                  bankAccountNumber: _bankAccountNumberController.text.trim(),
+                  bankAccountName: _bankAccountNameController.text.trim(),
+                ),
+              );
+            }),
+          ],
+        ),
       ),
     );
   }
