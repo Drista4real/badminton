@@ -1,0 +1,123 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwnerResource() {
+      return isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    function isSelf(userId) {
+      return isSignedIn() && userId == request.auth.uid;
+    }
+
+    function onlyNotificationReadFieldsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['isRead', 'readAt', 'updatedAt']);
+    }
+
+    function safeUserProfileFields() {
+      return [
+        'id',
+        'email',
+        'phoneNumber',
+        'fullName',
+        'avatarUrl',
+        'emailVerified',
+        'isActive',
+        'createdAt',
+        'updatedAt'
+      ];
+    }
+
+    function hasValidSelfProfileValues(userId) {
+      return isSelf(userId)
+        && request.resource.data.id == userId
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.emailVerified == request.auth.token.email_verified
+        && request.resource.data.isActive == true;
+    }
+
+    function isValidSelfProfileCreate(userId) {
+      return hasValidSelfProfileValues(userId)
+        && request.resource.data.keys().hasOnly(safeUserProfileFields());
+    }
+
+    function isValidSelfProfileUpdate(userId) {
+      return hasValidSelfProfileValues(userId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(safeUserProfileFields());
+    }
+
+    match /orders/{orderId} {
+      allow read: if isOwnerResource();
+      allow write: if false;
+    }
+
+    match /bookings/{bookingId} {
+      allow read: if isOwnerResource();
+      allow write: if false;
+    }
+
+    match /users/{userId} {
+      allow read: if isSelf(userId);
+      allow create: if isValidSelfProfileCreate(userId);
+      allow update: if isValidSelfProfileUpdate(userId);
+      allow delete: if false;
+    }
+
+    match /phoneNumbers/{phoneNumber} {
+      allow get: if isSignedIn();
+      allow list: if false;
+      allow create: if isSignedIn()
+        && !exists(/databases/$(database)/documents/phoneNumbers/$(phoneNumber))
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.phoneNumber == phoneNumber
+        && request.resource.data.keys().hasOnly([
+          'userId',
+          'phoneNumber',
+          'createdAt',
+          'updatedAt'
+        ]);
+      allow update: if isSignedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.phoneNumber == phoneNumber
+        && request.resource.data.keys().hasOnly([
+          'userId',
+          'phoneNumber',
+          'createdAt',
+          'updatedAt'
+        ]);
+      allow delete: if isSignedIn()
+        && resource.data.userId == request.auth.uid;
+    }
+
+    match /courts/{courtId} {
+      allow read, write: if false;
+    }
+
+    match /bookingSlotLocks/{lockId} {
+      allow read, write: if false;
+    }
+
+    match /walletTransactions/{transactionId} {
+      allow read, write: if false;
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isOwnerResource();
+      allow update: if isOwnerResource()
+        && request.resource.data.userId == resource.data.userId
+        && onlyNotificationReadFieldsChanged();
+      allow create, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

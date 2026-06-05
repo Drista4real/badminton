@@ -1,103 +1,22 @@
-// ===============================
-// FILE: lib/views/app/notification/notification_screen.dart
-// ===============================
-
 import 'package:flutter/material.dart';
-import '../../../constants/app_colors.dart';
+import 'package:get/get.dart';
 
-class NotificationScreen extends StatefulWidget {
+import '../../../commons/styles/app_colors.dart';
+import '../../../controllers/app/notification_controller.dart';
+import '../../../data/models/notification_model.dart';
+
+// Lưu file này bằng UTF-8 trong IDE để giữ đúng dấu tiếng Việt.
+class NotificationScreen extends GetView<NotificationController> {
   const NotificationScreen({super.key});
-
-  @override
-  State<NotificationScreen> createState() => _NotificationScreenState();
-}
-
-class _NotificationScreenState extends State<NotificationScreen> {
-  int _selectedTab = 0;
-  final List<String> _tabs = ['Tất cả', 'Đặt sân', 'Thanh toán', 'Hệ thống'];
-
-  final List<Map<String, dynamic>> _notifications = [
-    {
-      'type': 'booking',
-      'title': 'Đặt sân thành công',
-      'message': 'Sân 2 đã được đặt cho khung giờ 18:00 - 20:00.',
-      'time': '2 phút trước',
-      'isRead': false,
-      'icon': Icons.sports_tennis_rounded,
-      'color': Color(0xFF0B7D77),
-    },
-    {
-      'type': 'payment',
-      'title': 'Thanh toán thành công',
-      'message': 'Đã nhận 200.000VND vào tài khoản.',
-      'time': '1 giờ trước',
-      'isRead': false,
-      'icon': Icons.account_balance_wallet_rounded,
-      'color': Color(0xFF4CAF50),
-    },
-    {
-      'type': 'system',
-      'title': 'Cập nhật hệ thống',
-      'message': 'Nhiều tính năng mới đã được cập nhật. Khám phá ngay!',
-      'time': 'Hôm qua',
-      'isRead': true,
-      'icon': Icons.system_update_rounded,
-      'color': Color(0xFF9E9E9E),
-    },
-    {
-      'type': 'booking',
-      'title': 'Đã huỷ đặt sân',
-      'message': 'Yêu cầu đặt Sân 5 của bạn đã được huỷ.',
-      'time': '2 ngày trước',
-      'isRead': true,
-      'icon': Icons.cancel_rounded,
-      'color': Color(0xFFEF5350),
-    },
-    {
-      'type': 'payment',
-      'title': 'Nhắc nhở thanh toán',
-      'message': 'Bạn có lịch cố định sắp đến hạn thanh toán vào ngày 01/06.',
-      'time': '3 ngày trước',
-      'isRead': true,
-      'icon': Icons.notifications_active_rounded,
-      'color': Color(0xFFFF9800),
-    },
-    {
-      'type': 'booking',
-      'title': 'Xác nhận lịch cố định',
-      'message': 'Lịch cố định Sân 3 - T3, T5 từ 18:00-20:00 đã được xác nhận.',
-      'time': '5 ngày trước',
-      'isRead': true,
-      'icon': Icons.event_available_rounded,
-      'color': Color(0xFF0B7D77),
-    },
-    {
-      'type': 'system',
-      'title': 'Chào mừng bạn!',
-      'message': 'Cảm ơn bạn đã đăng ký ShuttleGo. Đặt sân ngay hôm nay!',
-      'time': '1 tuần trước',
-      'isRead': true,
-      'icon': Icons.celebration_rounded,
-      'color': Color(0xFF9C27B0),
-    },
-  ];
-
-  List<Map<String, dynamic>> get _filtered {
-    if (_selectedTab == 0) return _notifications;
-    final types = ['', 'booking', 'payment', 'system'];
-    return _notifications.where((n) => n['type'] == types[_selectedTab]).toList();
-  }
-
-  int get _unreadCount => _notifications.where((n) => !n['isRead']).length;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F8FA),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
-            _buildHeader(),
+            _buildHeader(context),
             _buildTabs(),
             Expanded(child: _buildList()),
           ],
@@ -106,50 +25,66 @@ class _NotificationScreenState extends State<NotificationScreen> {
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(BuildContext context) {
     return Container(
-      color: Colors.white,
+      color: Theme.of(context).colorScheme.surface,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(
         children: [
           GestureDetector(
-            onTap: () => Navigator.pop(context),
+            onTap: Get.back,
             child: Container(
-              width: 38, height: 38,
+              width: 38,
+              height: 38,
               decoration: BoxDecoration(
                 color: const Color(0xFFF0FAF9),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.arrow_back_ios_new_rounded,
-                  color: AppColors.primary, size: 16),
+              child: const Icon(
+                Icons.arrow_back_ios_new_rounded,
+                color: AppColors.primary,
+                size: 16,
+              ),
             ),
           ),
           const SizedBox(width: 12),
-          const Expanded(
-            child: Text('Thông báo',
-                style: TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.black)),
+          Expanded(
+            child: Text(
+              'notification.title'.tr,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: AppColors.black,
+              ),
+            ),
           ),
-          if (_unreadCount > 0)
-            GestureDetector(
-              onTap: () => setState(() {
-                for (var n in _notifications) n['isRead'] = true;
-              }),
+          Obx(() {
+            if (controller.unreadCount == 0) {
+              return const SizedBox.shrink();
+            }
+
+            return GestureDetector(
+              onTap: controller.markAllAsRead,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: const Text(
-                  'Đọc tất cả',
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w600),
+                child: Text(
+                  'notification.markAllRead'.tr,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-            ),
+            );
+          }),
         ],
       ),
     );
@@ -157,121 +92,159 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
   Widget _buildTabs() {
     return Container(
+      width: double.infinity,
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        child: Row(
-          children: List.generate(_tabs.length, (i) {
-            final isSelected = _selectedTab == i;
-            final count = i == 0
-                ? _unreadCount
-                : _notifications
-                    .where((n) =>
-                        n['type'] == ['', 'booking', 'payment', 'system'][i] &&
-                        !n['isRead'])
-                    .length;
-
-            return GestureDetector(
-              onTap: () => setState(() => _selectedTab = i),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                margin: const EdgeInsets.only(right: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                decoration: BoxDecoration(
-                  color: isSelected ? AppColors.primary : Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: isSelected ? AppColors.primary : Colors.grey.shade200,
-                  ),
+        child: Obx(
+          () => Row(
+            children: List.generate(NotificationController.tabs.length, (
+              index,
+            ) {
+              final isSelected = controller.selectedTab.value == index;
+              final unreadCount = controller.unreadCountForTab(index);
+              return Padding(
+                padding: EdgeInsets.only(
+                  right: index == NotificationController.tabs.length - 1
+                      ? 0
+                      : 8,
                 ),
-                child: Row(
-                  children: [
-                    Text(
-                      _tabs[i],
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: isSelected ? Colors.white : AppColors.grey),
+                child: GestureDetector(
+                  onTap: () => controller.selectTab(index),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    height: 34,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? AppColors.primary
+                          : const Color(0xFFF0FAF9),
+                      borderRadius: BorderRadius.circular(17),
+                      border: Border.all(
+                        color: isSelected
+                            ? AppColors.primary
+                            : const Color(0xFFE2F3F1),
+                      ),
                     ),
-                    if (count > 0) ...[
-                      const SizedBox(width: 5),
-                      Container(
-                        width: 16, height: 16,
-                        decoration: BoxDecoration(
-                          color: isSelected ? Colors.white : AppColors.primary,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Center(
-                          child: Text(
-                            '$count',
-                            style: TextStyle(
-                                fontSize: 9,
-                                fontWeight: FontWeight.w800,
-                                color: isSelected ? AppColors.primary : Colors.white),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          NotificationController.tabs[index],
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: isSelected
+                                ? Colors.white
+                                : AppColors.primary,
                           ),
                         ),
-                      ),
-                    ],
-                  ],
+                        if (unreadCount > 0) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            constraints: const BoxConstraints(
+                              minWidth: 18,
+                              minHeight: 18,
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 5),
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? Colors.white
+                                  : Colors.red.shade50,
+                              borderRadius: BorderRadius.circular(9),
+                            ),
+                            child: Text(
+                              unreadCount > 99
+                                  ? '99+'
+                                  : unreadCount.toString(),
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                color: isSelected
+                                    ? AppColors.primary
+                                    : Colors.red,
+                                height: 1,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            );
-          }),
+              );
+            }),
+          ),
         ),
       ),
     );
   }
 
   Widget _buildList() {
-    final items = _filtered;
+    return Obx(() {
+      if (controller.isLoading.value) {
+        return const Center(child: CircularProgressIndicator());
+      }
 
-    if (items.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.notifications_off_outlined,
-                size: 64, color: Colors.grey.shade300),
-            const SizedBox(height: 12),
-            Text('Không có thông báo',
-                style: TextStyle(fontSize: 14, color: Colors.grey.shade400)),
-          ],
-        ),
-      );
-    }
+      if (controller.errorMessage.value.isNotEmpty) {
+        return _buildEmpty(controller.errorMessage.value);
+      }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: items.length + 1,
-      itemBuilder: (_, i) {
-        if (i == items.length) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20),
-            child: Center(
-              child: Text(
-                'Bạn đã xem hết thông báo hôm nay!',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+      final items = controller.filteredNotifications;
+      if (items.isEmpty) {
+        return _buildEmpty('notification.empty'.tr);
+      }
+
+      return ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: items.length + 1,
+        itemBuilder: (_, i) {
+          if (i == items.length) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: Text(
+                  'notification.end'.tr,
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+                ),
               ),
-            ),
-          );
-        }
-        return _buildNotificationCard(items[i], i);
-      },
+            );
+          }
+
+          return _buildNotificationCard(items[i]);
+        },
+      );
+    });
+  }
+
+  Widget _buildEmpty(String message) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.notifications_none_rounded,
+            size: 64,
+            color: Colors.grey.shade300,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            message,
+            style: TextStyle(fontSize: 14, color: Colors.grey.shade400),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildNotificationCard(Map<String, dynamic> item, int index) {
-    final isRead = item['isRead'] as bool;
-    final color = item['color'] as Color;
+  Widget _buildNotificationCard(NotificationModel item) {
+    final isRead = item.isRead;
+    final color = controller.colorForType(item.type);
 
     return GestureDetector(
-      onTap: () {
-        setState(() {
-          final idx = _notifications.indexOf(item);
-          if (idx != -1) _notifications[idx]['isRead'] = true;
-        });
-      },
+      onTap: () => controller.markAsRead(item),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         margin: const EdgeInsets.only(bottom: 10),
@@ -294,17 +267,20 @@ class _NotificationScreenState extends State<NotificationScreen> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Icon
               Container(
-                width: 42, height: 42,
+                width: 42,
+                height: 42,
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(item['icon'] as IconData, color: color, size: 22),
+                child: Icon(
+                  controller.iconForType(item.type),
+                  color: color,
+                  size: 22,
+                ),
               ),
               const SizedBox(width: 12),
-              // Content
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -314,38 +290,43 @@ class _NotificationScreenState extends State<NotificationScreen> {
                       children: [
                         Expanded(
                           child: Text(
-                            item['title'],
+                            item.title,
                             style: TextStyle(
                               fontSize: 13,
-                              fontWeight: isRead ? FontWeight.w600 : FontWeight.w800,
+                              fontWeight: isRead
+                                  ? FontWeight.w600
+                                  : FontWeight.w800,
                               color: AppColors.black,
                             ),
                           ),
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          item['time'],
+                          controller.timeLabel(item.createdAt),
                           style: TextStyle(
-                              fontSize: 10, color: Colors.grey.shade400),
+                            fontSize: 10,
+                            color: Colors.grey.shade400,
+                          ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      item['message'],
+                      item.message,
                       style: TextStyle(
-                          fontSize: 12,
-                          color: isRead ? AppColors.grey : AppColors.black,
-                          height: 1.4),
+                        fontSize: 12,
+                        color: isRead ? AppColors.grey : AppColors.black,
+                        height: 1.4,
+                      ),
                     ),
                   ],
                 ),
               ),
-              // Unread dot
               if (!isRead)
                 Container(
                   margin: const EdgeInsets.only(left: 8, top: 2),
-                  width: 8, height: 8,
+                  width: 8,
+                  height: 8,
                   decoration: BoxDecoration(
                     color: color,
                     shape: BoxShape.circle,

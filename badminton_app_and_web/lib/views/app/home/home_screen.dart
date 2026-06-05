@@ -1,8 +1,4 @@
-
-
 import 'package:flutter/material.dart';
-
-import '../../../constants/app_colors.dart';
 import 'package:get/get.dart';
 import '../booking/booking_screen.dart';
 import '../notification/notification_screen.dart';
@@ -16,55 +12,70 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  int _selectedNavIndex = 0;
-  int _selectedDay = 0;
+import '../../../commons/styles/app_colors.dart';
+import '../../../controllers/app/home_controller.dart';
+import '../../../routes/app_routes.dart';
 
-  final List<Map<String, dynamic>> _weekdaySlots = [
-    {'time': '5h - 9h',   'days': 'T2 - T6', 'prices': ['55.000', '70.000', '80.000']},
-    {'time': '9h - 16h',  'days': 'T2 - T6', 'prices': ['45.000', '60.000', '70.000']},
-    {'time': '16h - 22h', 'days': 'T2 - T6', 'prices': ['90.000', '100.000', '110.000']},
-    {'time': '22h - 24h', 'days': 'T2 - CN', 'prices': ['60.000', '70.000', '70.000']},
-  ];
+class HomeScreen extends StatelessWidget {
+  const HomeScreen({super.key});
 
-  final List<Map<String, dynamic>> _weekendSlots = [
-    {'time': '5h - 16h',  'days': 'T7 - CN', 'prices': ['90.000', '100.000', '110.000']},
-    {'time': '16h - 22h', 'days': 'T7 - CN', 'prices': ['90.000', '100.000', '110.000']},
-  ];
+  static const double _bottomNavReservedHeight = 96;
+  static const double _priceCourtColumnWidth = 96;
 
   @override
   Widget build(BuildContext context) {
-    final slots = _selectedDay == 0 ? _weekdaySlots : _weekendSlots;
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7F8FA),
-      body: SafeArea(
-        child: Column(
+    final controller = _findController();
+    final theme = Theme.of(context);
+
+    return SizedBox.expand(
+      child: Scaffold(
+        backgroundColor: theme.scaffoldBackgroundColor,
+        resizeToAvoidBottomInset: false,
+        body: Stack(
           children: [
-            _buildHeader(),
-            Expanded(
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+            Positioned.fill(
+              child: SafeArea(
+                bottom: false,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: EdgeInsets.only(
+                    bottom:
+                        _bottomNavReservedHeight +
+                        MediaQuery.paddingOf(context).bottom,
+                  ),
                   children: [
+                    _buildHeader(context, controller),
                     const SizedBox(height: 12),
-                    _buildBanner(),
+                    _buildBanner(controller),
                     const SizedBox(height: 20),
-                    _buildPriceSection(slots),
-                    const SizedBox(height: 20),
+                    _buildPriceSection(controller),
                   ],
                 ),
               ),
             ),
-            _buildBottomNav(),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: _buildBottomNav(context, controller),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildHeader() {
+  HomeController? _findController() {
+    try {
+      return Get.find<HomeController>();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Widget _buildHeader(BuildContext context, HomeController? controller) {
     return Container(
-      color: Colors.white,
+      color: Theme.of(context).colorScheme.surface,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       child: Row(
         children: [
@@ -83,69 +94,93 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Xin chào, Thùy Trâm 👋',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.black,
+            child: controller == null
+                ? _HeaderText(name: 'bạn', dateLabel: _todayLabel())
+                : Obx(
+                    () => _HeaderText(
+                      name: controller.greetingName,
+                      dateLabel: controller.todayLabel,
+                    ),
                   ),
-                ),
-                Text(
-                  _getTodayString(),
-                  style: const TextStyle(fontSize: 12, color: AppColors.grey),
-                ),
-              ],
-            ),
           ),
-          Stack(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF0FAF9),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.notifications_outlined,
-                  color: AppColors.primary,
-                  size: 22,
-                ),
-              ),
-              Positioned(
-                right: 9,
-                top: 9,
-                child: Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: Colors.red,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 1.5),
-                  ),
-                ),
-              ),
-            ],
-          ),
+          const SizedBox(width: 8),
+          _buildNotificationButton(controller),
         ],
       ),
     );
   }
 
-  Widget _buildBanner() {
+  Widget _buildNotificationButton(HomeController? controller) {
+    Widget button({required int unreadCount}) {
+      return GestureDetector(
+        onTap: () => _onBottomNavTap(3, controller),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0FAF9),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.notifications_outlined,
+                color: AppColors.primary,
+                size: 22,
+              ),
+            ),
+            if (unreadCount > 0)
+              Positioned(
+                right: -3,
+                top: -4,
+                child: Container(
+                  constraints: const BoxConstraints(
+                    minWidth: 18,
+                    minHeight: 18,
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(color: Colors.red, width: 1.5),
+                  ),
+                  child: Text(
+                    unreadCount > 99 ? '99+' : unreadCount.toString(),
+                    maxLines: 1,
+                    style: const TextStyle(
+                      color: Colors.red,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      height: 1,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+
+    if (controller == null) {
+      return button(unreadCount: 0);
+    }
+
+    return Obx(
+      () => button(unreadCount: controller.unreadNotificationCount.value),
+    );
+  }
+
+  Widget _buildBanner(HomeController? controller) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      // Dùng DecoratedBox bên ngoài để có shadow, ClipRRect bên trong để clip góc
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: AppColors.primary.withOpacity(0.35),
+              color: AppColors.primary.withValues(alpha: 0.35),
               blurRadius: 20,
               offset: const Offset(0, 8),
             ),
@@ -155,17 +190,20 @@ class _HomeScreenState extends State<HomeScreen> {
           borderRadius: BorderRadius.circular(20),
           child: Container(
             width: double.infinity,
-            height: 175,
+            height: 188,
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [Color(0xFF0B7D77), Color(0xFF0DBDB6), Color(0xFF12D9D0)],
+                colors: [
+                  Color(0xFF0B7D77),
+                  Color(0xFF0DBDB6),
+                  Color(0xFF12D9D0),
+                ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
             ),
             child: Stack(
               children: [
-                // Vòng tròn trang trí
                 Positioned(
                   right: -30,
                   top: -30,
@@ -174,7 +212,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     height: 140,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: Colors.white.withOpacity(0.08),
+                      color: Colors.white.withValues(alpha: 0.08),
                     ),
                   ),
                 ),
@@ -186,26 +224,27 @@ class _HomeScreenState extends State<HomeScreen> {
                     height: 120,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: Colors.white.withOpacity(0.06),
+                      color: Colors.white.withValues(alpha: 0.06),
                     ),
                   ),
                 ),
-                // Nội dung
                 Padding(
-                  padding: const EdgeInsets.all(22),
+                  padding: const EdgeInsets.all(18),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
+                          color: Colors.white.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: const Text(
-                          '🏸 ShuttleGo Badminton',
+                          'ShuttleGo Badminton',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 11,
@@ -215,9 +254,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       const SizedBox(height: 10),
-                      const Text(
-                        'Đặt sân nhanh\nChơi ngay hôm nay!',
-                        style: TextStyle(
+                      Text(
+                        'home.bannerTitle'.tr,
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 20,
                           fontWeight: FontWeight.w800,
@@ -226,27 +265,29 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 14),
                       GestureDetector(
-                        onTap: () {},
+                        onTap: () => _onBottomNavTap(1, controller),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 18, vertical: 9),
+                            horizontal: 18,
+                            vertical: 9,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(22),
                           ),
-                          child: const Row(
+                          child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                'Đặt sân ngay',
-                                style: TextStyle(
+                                'home.bookNow'.tr,
+                                style: const TextStyle(
                                   color: AppColors.primary,
                                   fontWeight: FontWeight.w700,
                                   fontSize: 13,
                                 ),
                               ),
-                              SizedBox(width: 6),
-                              Icon(
+                              const SizedBox(width: 6),
+                              const Icon(
                                 Icons.arrow_forward_rounded,
                                 color: AppColors.primary,
                                 size: 16,
@@ -266,18 +307,20 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildPriceSection(List<Map<String, dynamic>> slots) {
+  Widget _buildPriceSection(HomeController? controller) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              const Text(
-                'Bảng giá sân',
-                style: TextStyle(
+              Text(
+                'home.priceTitle'.tr,
+                style: const TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w800,
                   color: AppColors.black,
@@ -290,49 +333,84 @@ class _HomeScreenState extends State<HomeScreen> {
                   border: Border.all(color: const Color(0xFFEEEEEE)),
                 ),
                 child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    _buildToggleBtn('T2 - T6', 0),
-                    _buildToggleBtn('T7 - CN', 1),
+                    _buildToggleBtn('T2 - T6', 0, controller),
+                    _buildToggleBtn('T7 - CN', 1, controller),
                   ],
                 ),
               ),
             ],
           ),
+          const SizedBox(height: 10),
+          _buildTimeBandTabs(controller),
           const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              color: AppColors.primary,
-              borderRadius: BorderRadius.circular(10),
+          _buildPriceHeader(),
+          const SizedBox(height: 8),
+          if (controller == null)
+            _buildEmptyState('Đang tải dữ liệu trang chủ.')
+          else
+            Obx(() => _buildPriceBody(controller)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPriceBody(HomeController controller) {
+    try {
+      if (controller.isLoadingCourts.value) {
+        return const Padding(
+          padding: EdgeInsets.symmetric(vertical: 32),
+          child: Center(
+            child: CircularProgressIndicator(color: AppColors.primary),
+          ),
+        );
+      }
+
+      if (controller.errorMessage.value.isNotEmpty) {
+        return _buildEmptyState(controller.errorMessage.value);
+      }
+
+      final rows = controller.priceRows;
+      if (rows.isEmpty) {
+        return _buildEmptyState('Chưa có dữ liệu bảng giá sân.');
+      }
+
+      return Column(children: rows.map(_buildPriceRow).toList(growable: false));
+    } catch (_) {
+      return _buildEmptyState('Không thể hiển thị bảng giá sân.');
+    }
+  }
+
+  Widget _buildPriceHeader() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: _priceCourtColumnWidth,
+            child: Text(
+              'home.court'.tr,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
             ),
+          ),
+          Expanded(
             child: Row(
               children: [
-                const SizedBox(
-                  width: 70,
-                  child: Text(
-                    'Khung giờ',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      _headerLabel('Cố định'),
-                      _headerLabel('Tài khoản'),
-                      _headerLabel('Vãng lai'),
-                    ],
-                  ),
-                ),
+                Expanded(child: _headerLabel('home.fixed'.tr)),
+                Expanded(child: _headerLabel('home.account'.tr)),
+                Expanded(child: _headerLabel('home.guest'.tr)),
               ],
             ),
           ),
-          const SizedBox(height: 8),
-          ...slots.map((slot) => _buildPriceRow(slot)).toList(),
         ],
       ),
     );
@@ -341,6 +419,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _headerLabel(String text) {
     return Text(
       text,
+      textAlign: TextAlign.center,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
       style: const TextStyle(
         color: Colors.white,
         fontSize: 11,
@@ -349,37 +430,45 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildToggleBtn(String label, int index) {
-    final isSelected = _selectedDay == index;
-    return GestureDetector(
-      onTap: () => setState(() => _selectedDay = index),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        margin: const EdgeInsets.all(3),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: isSelected ? AppColors.primary : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: isSelected ? Colors.white : AppColors.grey,
-          ),
-        ),
+  Widget _buildToggleBtn(String label, int index, HomeController? controller) {
+    if (controller == null) {
+      return _ToggleButton(label: label, isSelected: index == 0, onTap: null);
+    }
+
+    return Obx(
+      () => _ToggleButton(
+        label: label,
+        isSelected: controller.selectedDayIndex.value == index,
+        onTap: () => controller.selectDay(index),
       ),
     );
   }
 
-  Widget _buildPriceRow(Map<String, dynamic> slot) {
-    final prices = slot['prices'] as List<String>;
+  Widget _buildTimeBandTabs(HomeController? controller) {
+    if (controller == null) {
+      return _TimeBandTabs(
+        bands: HomePriceBand.weekdayBands,
+        selectedIndex: 0,
+        onTap: null,
+      );
+    }
+
+    return Obx(
+      () => _TimeBandTabs(
+        bands: controller.priceBands,
+        selectedIndex: controller.selectedPriceBandIndex.value,
+        onTap: controller.selectPriceBand,
+      ),
+    );
+  }
+
+  Widget _buildPriceRow(HomePriceRow row) {
     final colors = [
       const Color(0xFF2E7D32),
       const Color(0xFF0B7D77),
       const Color(0xFFE65100),
     ];
+    final prices = [row.fixedPrice, row.accountPrice, row.guestPrice];
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -389,7 +478,7 @@ class _HomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -398,12 +487,14 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Row(
         children: [
           SizedBox(
-            width: 70,
+            width: _priceCourtColumnWidth,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  slot['time'],
+                  row.courtLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -412,13 +503,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 2),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
+                    color: AppColors.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
-                    slot['days'],
+                    row.description,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 9,
                       color: AppColors.primary,
@@ -431,23 +527,28 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           Expanded(
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: List.generate(3, (i) {
-                return Column(
-                  children: [
-                    Text(
-                      prices[i],
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: colors[i],
+              children: List.generate(3, (index) {
+                return Expanded(
+                  child: Column(
+                    children: [
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          _formatMoney(controller: null, value: prices[index]),
+                          maxLines: 1,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: colors[index],
+                          ),
+                        ),
                       ),
-                    ),
-                    const Text(
-                      'vnd',
-                      style: TextStyle(fontSize: 9, color: AppColors.grey),
-                    ),
-                  ],
+                      const Text(
+                        'VNĐ',
+                        style: TextStyle(fontSize: 9, color: AppColors.grey),
+                      ),
+                    ],
+                  ),
                 );
               }),
             ),
@@ -457,21 +558,49 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildBottomNav() {
+  String _formatMoney({
+    required HomeController? controller,
+    required num value,
+  }) {
+    if (controller != null) return controller.formatMoney(value);
+    if (value <= 0) return '--';
+    return value.round().toString().replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (match) => '${match[1]}.',
+    );
+  }
+
+  Widget _buildEmptyState(String message) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 28),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        message,
+        textAlign: TextAlign.center,
+        style: const TextStyle(color: AppColors.grey, fontSize: 13),
+      ),
+    );
+  }
+
+  Widget _buildBottomNav(BuildContext context, HomeController? controller) {
     final items = [
-      {'icon': Icons.home_rounded, 'label': 'Trang chủ'},
-      {'icon': Icons.sports_tennis_rounded, 'label': 'Đặt sân'},
-      {'icon': Icons.account_balance_wallet_rounded, 'label': 'Ví'},
-      {'icon': Icons.notifications_rounded, 'label': 'Thông báo'},
-      {'icon': Icons.person_rounded, 'label': 'Hồ sơ'},
+      {'icon': Icons.home_rounded, 'label': 'nav.home'},
+      {'icon': Icons.sports_tennis_rounded, 'label': 'nav.booking'},
+      {'icon': Icons.account_balance_wallet_rounded, 'label': 'nav.wallet'},
+      {'icon': Icons.notifications_rounded, 'label': 'nav.notification'},
+      {'icon': Icons.person_rounded, 'label': 'nav.profile'},
     ];
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.07),
+            color: Colors.black.withValues(alpha: 0.07),
             blurRadius: 16,
             offset: const Offset(0, -2),
           ),
@@ -509,42 +638,219 @@ class _HomeScreenState extends State<HomeScreen> {
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        items[i]['icon'] as IconData,
-                        color: isSelected ? AppColors.primary : AppColors.grey,
-                        size: 22,
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        items[i]['label'] as String,
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: isSelected ? AppColors.primary : AppColors.grey,
-                          fontWeight: isSelected
-                              ? FontWeight.w700
-                              : FontWeight.normal,
-                        ),
-                      ),
-                    ],
-                  ),
                 ),
-              );
-            }),
-          ),
         ),
       ),
     );
   }
 
-  String _getTodayString() {
+  void _onBottomNavTap(int index, HomeController? controller) {
+    if (controller != null) {
+      controller.onBottomNavTap(index);
+      return;
+    }
+
+    switch (index) {
+      case 1:
+        Get.toNamed(AppRoutes.booking);
+        return;
+      case 2:
+        Get.toNamed(AppRoutes.wallet);
+        return;
+      case 3:
+        Get.toNamed(AppRoutes.notification);
+        return;
+      case 4:
+        Get.toNamed(AppRoutes.profile);
+        return;
+      default:
+        return;
+    }
+  }
+
+  String _todayLabel() {
     final now = DateTime.now();
-    const days = [
-      'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm',
-      'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật'
+    const weekdays = [
+      'Thứ Hai',
+      'Thứ Ba',
+      'Thứ Tư',
+      'Thứ Năm',
+      'Thứ Sáu',
+      'Thứ Bảy',
+      'Chủ Nhật',
     ];
-    return '${days[now.weekday - 1]}, ${now.day}/${now.month}/${now.year}';
+    final day = now.day.toString().padLeft(2, '0');
+    final month = now.month.toString().padLeft(2, '0');
+    return '${weekdays[now.weekday - 1]}, $day/$month/${now.year}';
+  }
+}
+
+class _HeaderText extends StatelessWidget {
+  const _HeaderText({required this.name, required this.dateLabel});
+
+  final String name;
+  final String dateLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'home.greeting'.trParams({'name': name}),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: AppColors.black,
+          ),
+        ),
+        Text(
+          dateLabel,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 12, color: AppColors.grey),
+        ),
+      ],
+    );
+  }
+}
+
+class _TimeBandTabs extends StatelessWidget {
+  const _TimeBandTabs({
+    required this.bands,
+    required this.selectedIndex,
+    required this.onTap,
+  });
+
+  final List<HomePriceBand> bands;
+  final int selectedIndex;
+  final ValueChanged<int>? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFEEEEEE)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(
+            bands.length,
+            (index) => _ToggleButton(
+              label: bands[index].timeLabel,
+              isSelected: selectedIndex == index,
+              onTap: onTap == null ? null : () => onTap!(index),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ToggleButton extends StatelessWidget {
+  const _ToggleButton({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool isSelected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        margin: const EdgeInsets.all(3),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: isSelected ? Colors.white : AppColors.grey,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BottomNavRow extends StatelessWidget {
+  const _BottomNavRow({
+    required this.items,
+    required this.selectedIndex,
+    required this.onTap,
+  });
+
+  final List<Map<String, Object>> items;
+  final int selectedIndex;
+  final ValueChanged<int> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: List.generate(items.length, (index) {
+        final isSelected = selectedIndex == index;
+        return Expanded(
+          child: GestureDetector(
+            onTap: () => onTap(index),
+            child: Center(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? AppColors.primary.withValues(alpha: 0.1)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      items[index]['icon'] as IconData,
+                      color: isSelected ? AppColors.primary : AppColors.grey,
+                      size: 22,
+                    ),
+                    const SizedBox(height: 2),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        (items[index]['label'] as String).tr,
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: isSelected
+                              ? AppColors.primary
+                              : AppColors.grey,
+                          fontWeight: isSelected
+                              ? FontWeight.w700
+                              : FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      }),
+    );
   }
 }

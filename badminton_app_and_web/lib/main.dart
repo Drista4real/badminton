@@ -1,29 +1,29 @@
-// ===============================
-// FILE: lib/main.dart
-// ===============================
-
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:get/get.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-import 'views/app/onboarding/onboarding_screen.dart';
+import 'apps/badminton_app.dart';
+import 'controllers/app/app_settings_controller.dart';
+import 'firebase_options.dart';
 
-void main() {
-  runApp(const MyApp());
-}
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final prefs = await SharedPreferences.getInstance();
+  final isDarkMode = prefs.getBool(AppSettingsController.darkModeKey) ?? false;
+  final initialLocale = AppSettingsController.localeFromTag(
+    prefs.getString(AppSettingsController.localeKey),
+  );
 
-  @override
-  Widget build(BuildContext context) {
-    return GetMaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Badminton Booking',
-      theme: ThemeData(
-        fontFamily: 'Poppins',
-        scaffoldBackgroundColor: Colors.white,
-      ),
-      home: const OnboardingScreen(),
-    );
-  }
+  Get.put<AppSettingsController>(
+    AppSettingsController(
+      initialDarkMode: isDarkMode,
+      initialLocale: initialLocale,
+    ),
+    permanent: true,
+  );
+
+  runApp(const BadmintonApp());
 }

@@ -1,12 +1,14 @@
 {
   "version": 2,
-  "dgSpecHash": "xtBke01/fzc=",
+  "dgSpecHash": "uEUzdRyz+rE=",
   "success": true,
   "projectFilePath": "D:\\android\\project\\badminton_project\\backend_caulong\\backend_caulong.csproj",
   "expectedPackageFiles": [
+    "C:\\Users\\PC\\.nuget\\packages\\firebaseadmin\\3.5.0\\firebaseadmin.3.5.0.nupkg.sha512",
     "C:\\Users\\PC\\.nuget\\packages\\google.api.commonprotos\\2.17.0\\google.api.commonprotos.2.17.0.nupkg.sha512",
     "C:\\Users\\PC\\.nuget\\packages\\google.api.gax\\4.13.1\\google.api.gax.4.13.1.nupkg.sha512",
     "C:\\Users\\PC\\.nuget\\packages\\google.api.gax.grpc\\4.13.1\\google.api.gax.grpc.4.13.1.nupkg.sha512",
+    "C:\\Users\\PC\\.nuget\\packages\\google.api.gax.rest\\4.13.1\\google.api.gax.rest.4.13.1.nupkg.sha512",
     "C:\\Users\\PC\\.nuget\\packages\\google.apis\\1.73.0\\google.apis.1.73.0.nupkg.sha512",
     "C:\\Users\\PC\\.nuget\\packages\\google.apis.auth\\1.73.0\\google.apis.auth.1.73.0.nupkg.sha512",
     "C:\\Users\\PC\\.nuget\\packages\\google.apis.core\\1.73.0\\google.apis.core.1.73.0.nupkg.sha512",

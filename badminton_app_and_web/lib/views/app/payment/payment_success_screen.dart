@@ -1,12 +1,11 @@
-
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
-import '../../../constants/app_colors.dart';
-import '../../../widgets/custom_button.dart';
-import '../home/home_screen.dart';
-import '../history/history_screen.dart';
+import '../../../commons/styles/app_colors.dart';
+import '../../../routes/app_routes.dart';
+import '../../../commons/widgets/custom_button.dart';
 
+// Lưu file này bằng UTF-8 trong IDE để giữ đúng dấu tiếng Việt.
 class PaymentSuccessScreen extends StatelessWidget {
   final String courtName;
   final double price;
@@ -34,15 +33,11 @@ class PaymentSuccessScreen extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Spacer(),
-
-              // Success graphic
               _buildSuccessGraphic(),
               const SizedBox(height: 28),
-
-              // Success text
-              const Text(
-                'Đặt sân thành công!',
-                style: TextStyle(
+              Text(
+                'paymentSuccess.title'.tr,
+                style: const TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
                   color: AppColors.black,
@@ -50,13 +45,8 @@ class PaymentSuccessScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 32),
-
-              // Details card
               _buildReceiptCard(),
-
               const Spacer(flex: 2),
-
-              // Action buttons
               _buildActionButtons(),
             ],
           ),
@@ -69,7 +59,6 @@ class PaymentSuccessScreen extends StatelessWidget {
     return Stack(
       alignment: Alignment.center,
       children: [
-        // Decorative background elements
         Container(
           width: 140,
           height: 140,
@@ -77,13 +66,12 @@ class PaymentSuccessScreen extends StatelessWidget {
             color: const Color(0xFFF0FAF9),
             borderRadius: BorderRadius.circular(28),
             border: Border.all(
-              color: AppColors.secondary.withOpacity(0.3),
+              color: AppColors.secondary.withAlpha(77),
               width: 1.5,
-              style: BorderStyle.solid, // Simulated dashed border or light border box
+              style: BorderStyle.solid,
             ),
           ),
         ),
-        // Success circle
         Container(
           width: 80,
           height: 80,
@@ -102,11 +90,7 @@ class PaymentSuccessScreen extends StatelessWidget {
               ),
             ],
           ),
-          child: const Icon(
-            Icons.check_rounded,
-            color: Colors.white,
-            size: 44,
-          ),
+          child: const Icon(Icons.check_rounded, color: Colors.white, size: 44),
         ),
       ],
     );
@@ -121,7 +105,7 @@ class PaymentSuccessScreen extends StatelessWidget {
         border: Border.all(color: const Color(0xFFEEEEEE)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
+            color: Colors.black.withAlpha(5),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -129,12 +113,10 @@ class PaymentSuccessScreen extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // Header info
           Padding(
             padding: const EdgeInsets.all(20),
             child: Row(
               children: [
-                // Icon badminton
                 Container(
                   width: 44,
                   height: 44,
@@ -149,7 +131,6 @@ class PaymentSuccessScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 14),
-                // Court & Booking ID
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -164,7 +145,9 @@ class PaymentSuccessScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        'MÃ ĐẶT CHỖ: #$bookingCode',
+                        'paymentSuccess.bookingCode'.trParams({
+                          'code': bookingCode,
+                        }),
                         style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -178,32 +161,32 @@ class PaymentSuccessScreen extends StatelessWidget {
               ],
             ),
           ),
-          // Dashed Divider line
           Row(
             children: List.generate(
               30,
               (index) => Expanded(
                 child: Container(
                   height: 1,
-                  color: index % 2 == 0 ? Colors.transparent : Colors.grey.shade300,
+                  color: index.isEven
+                      ? Colors.transparent
+                      : Colors.grey.shade300,
                 ),
               ),
             ),
           ),
-          // Body info
           Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
               children: [
                 _buildReceiptRow(
                   icon: Icons.calendar_today_rounded,
-                  label: 'Ngày',
+                  label: 'paymentSuccess.date'.tr,
                   value: date,
                 ),
                 const SizedBox(height: 12),
                 _buildReceiptRow(
                   icon: Icons.access_time_rounded,
-                  label: 'Thời gian',
+                  label: 'paymentSuccess.time'.tr,
                   value: time,
                 ),
               ],
@@ -248,10 +231,9 @@ class PaymentSuccessScreen extends StatelessWidget {
     return Column(
       children: [
         CustomButton(
-          text: 'Về Trang Chủ',
+          text: 'paymentSuccess.home'.tr,
           onTap: () {
-            // Clear route stack and go to home screen
-            Get.offAll(() => const HomeScreen());
+            Get.offAllNamed(AppRoutes.home);
           },
         ),
         const SizedBox(height: 12),
@@ -260,9 +242,10 @@ class PaymentSuccessScreen extends StatelessWidget {
           height: 55,
           child: OutlinedButton(
             onPressed: () {
-              // Open History Screen directly
-              Get.offAll(() => const HomeScreen()); // Ensure home stack exists
-              Get.to(() => const HistoryScreen(initialIndex: 0));
+              Get.offAllNamed(
+                AppRoutes.history,
+                arguments: {'initialIndex': 0},
+              );
             },
             style: OutlinedButton.styleFrom(
               side: const BorderSide(color: AppColors.primary, width: 1.5),
@@ -270,9 +253,9 @@ class PaymentSuccessScreen extends StatelessWidget {
                 borderRadius: BorderRadius.circular(30),
               ),
             ),
-            child: const Text(
-              'Xem Đơn Hàng',
-              style: TextStyle(
+            child: Text(
+              'paymentSuccess.history'.tr,
+              style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
                 color: AppColors.primary,

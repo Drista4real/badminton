@@ -31,7 +31,7 @@ badminton_app_and_web/
     ├── routes/               # Định nghĩa đường dẫn điều hướng (app_pages.dart, app_routes.dart, web_routes.dart)
     ├── utils/                # Hàm tiện ích dùng chung (Format ngày giờ, format tiền tệ VNĐ)
     ├── data/                 # TẦNG QUẢN LÝ VÀ GIAO TIẾP DỮ LIỆU
-    │   ├── local/            # Cấu hình lưu trữ dưới máy (Lưu Token FaceID/Vân tay vào Secure Storage)
+    │   ├── local/            # Cấu hình lưu trữ dưới máy (token và tùy chọn ứng dụng)
     │   ├── models/           # Class ép kiểu dữ liệu từ JSON (Backend) sang Object của Dart
     │   ├── network/          # Cấu hình kết nối mạng (Dio), Interceptor và kết nối Real-time
     │   └── repository/       # Tầng trung gian điều phối: Quyết định lấy dữ liệu từ Network hay Local Cache
