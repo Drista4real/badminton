@@ -128,7 +128,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                     autofillHints: const [AutofillHints.email],
                     onSubmitted: (_) => controller.requestPasswordReset(),
                   ),
-                  Obx(() => _StatusPanel(controller: controller)),
+                  _StatusPanel(controller: controller),
                   const SizedBox(height: 18),
                   Obx(
                     () => CustomButton(
@@ -176,64 +176,66 @@ class _StatusPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final email = controller.passwordResetEmail.value;
-    if (email.isEmpty) {
-      return const SizedBox.shrink();
-    }
+    return Obx(() {
+      final email = controller.passwordResetEmail.value;
+      if (email.isEmpty) {
+        return const SizedBox.shrink();
+      }
 
-    final readyToLogin = controller.isPasswordResetReadyToLogin.value;
-    final isChecking = controller.isPasswordResetAutoChecking.value;
+      final readyToLogin = controller.isPasswordResetReadyToLogin.value;
+      final isChecking = controller.isPasswordResetAutoChecking.value;
 
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 4),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: (readyToLogin ? Colors.green : AppColors.primary).withValues(
-          alpha: 0.08,
-        ),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
+      return Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 4),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
           color: (readyToLogin ? Colors.green : AppColors.primary).withValues(
-            alpha: 0.18,
+            alpha: 0.08,
+          ),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: (readyToLogin ? Colors.green : AppColors.primary).withValues(
+              alpha: 0.18,
+            ),
           ),
         ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (isChecking)
-            const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: AppColors.primary,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (isChecking)
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.primary,
+                ),
+              )
+            else
+              Icon(
+                readyToLogin
+                    ? Icons.check_circle_outline_rounded
+                    : Icons.mark_email_read_outlined,
+                color: readyToLogin ? Colors.green : AppColors.primary,
+                size: 20,
               ),
-            )
-          else
-            Icon(
-              readyToLogin
-                  ? Icons.check_circle_outline_rounded
-                  : Icons.mark_email_read_outlined,
-              color: readyToLogin ? Colors.green : AppColors.primary,
-              size: 20,
-            ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              readyToLogin
-                  ? 'Nếu bạn đã đặt lại mật khẩu trong Gmail, hãy đăng nhập lại bằng mật khẩu mới.'
-                  : 'Đã gửi link đến $email. Hãy mở Gmail, đặt lại mật khẩu rồi quay lại app; màn hình sẽ tự cập nhật khi bạn quay lại.',
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.grey,
-                height: 1.4,
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                readyToLogin
+                    ? 'Nếu bạn đã đặt lại mật khẩu trong Gmail, hãy đăng nhập lại bằng mật khẩu mới.'
+                    : 'Đã gửi link đến $email. Hãy mở Gmail, đặt lại mật khẩu rồi quay lại app; màn hình sẽ tự cập nhật khi bạn quay lại.',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.grey,
+                  height: 1.4,
+                ),
               ),
             ),
-          ),
-        ],
-      ),
-    );
+          ],
+        ),
+      );
+    });
   }
 }
