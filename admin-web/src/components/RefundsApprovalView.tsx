@@ -316,24 +316,7 @@ export default function RefundsApprovalView({ refunds, bookings, onApproveRefund
                       <td className="px-6 py-4 text-center">
                         {isPending ? (
                           <button
-                            onClick={async () => {
-                              onApproveRefund(ref.id);
-                              // We also update it synchronously in backend.ts/real2.ts
-                              try {
-                                const response = await fetch(`/api/data-wallet/${ref.id}`, {
-                                  method: 'PUT',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ status: 'completed' })
-                                });
-                                if (response.ok) {
-                                  console.log(`Backend status synced for refund ${ref.id}`);
-                                }
-                              } catch(e) {
-                                console.error('Failed to sync refund status with backend', e);
-                              }
-                              
-                              alert(`Xác nhận hoàn tiền thành công!\nYêu cầu ${ref.id} trị giá ${ref.amount.toLocaleString('vi-VN')}đ đã được Kế toán chuyển khoản thủ công.`);
-                            }}
+                            onClick={() => onApproveRefund(ref.id)}
                             className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] px-3 py-2 rounded-xl inline-flex items-center gap-1.5 transition-all shadow-xs shrink-0 cursor-pointer border border-indigo-700"
                           >
                             <CheckCircle size={12} />

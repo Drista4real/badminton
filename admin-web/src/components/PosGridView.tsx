@@ -13,16 +13,16 @@ interface PosGridViewProps {
   customers: Customer[];
   pricingRules: PricingRule[];
   onAddBooking: (booking: Booking) => void;
-  onUpdateBookingStatus: (id: string, newStatus: Booking['status']) => void;
+  onUpdateBookingStatus: (id: string, newStatus: Booking['status'], updates?: any) => void;
 }
 
-// Generating slots in 30-min intervals from 05:00 to 23:00
+// Generating slots in 30-min intervals from 05:00 to 23:30
 const STANDARDIZED_TIME_SLOTS = [
   '05:00', '05:30', '06:00', '06:30', '07:00', '07:30', '08:00', '08:30',
   '09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '12:30',
   '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30',
   '17:00', '17:30', '18:00', '18:30', '19:00', '19:30', '20:00', '20:30',
-  '21:00', '21:30', '22:00', '22:30', '23:00'
+  '21:00', '21:30', '22:00', '22:30', '23:00', '23:30'
 ];
 
 export default function PosGridView({
@@ -171,9 +171,9 @@ export default function PosGridView({
     return bookings.find(b => {
       if (b.courtId !== courtId || b.date !== selectedDateISO) return false;
       const bStartIdx = TIME_SLOTS.indexOf(b.startTime);
-      const bEndIdx = TIME_SLOTS.indexOf(b.endTime);
+      const bEndIdx = b.endTime === '24:00' ? TIME_SLOTS.length : TIME_SLOTS.indexOf(b.endTime);
       const curIdx = TIME_SLOTS.indexOf(time);
-      return curIdx >= bStartIdx && curIdx < bEndIdx && b.status !== 'Cancelled';
+      return curIdx >= bStartIdx && curIdx < bEndIdx && b.status !== 'Cancelled' && b.status !== 'No-show';
     });
   };
 
@@ -187,39 +187,42 @@ export default function PosGridView({
     return 'T2 - T6';
   };
 
-  // Dynamic price mapping hourly slots based on pricingRules from database
-  const getPriceForHourSlot = (dateStr: string, hourNum: number, custType: 'App' | 'Walkin'): number => {
-    const dayType = getDayType(dateStr); // 'T2 - T6' or 'T7 - CN'
-    const rule = pricingRules.find(r => {
-      if (r.dayType !== 'T2 - CN' && r.dayType !== dayType) return false;
-      // Parse custom time slot: e.g. "5h - 9h", "16h - 22h" etc.
-      const match = r.timeSlot.match(/(\d+)h\s*-\s*(\d+)h/);
-      if (match) {
-        const start = parseInt(match[1], 10);
-        const end = parseInt(match[2], 10);
-        return hourNum >= start && hourNum < end;
-      }
-      return false;
-    });
-
-    if (rule) {
-      if (custType === 'App') return rule.appCustPrice;
-      return rule.walkinPrice;
-    }
-
-    // Baseline fallback if rule is not found in database rules yet
-    const isWeekend = dayType === 'T7 - CN';
+  // Dynamic price mapping hourly slots based on court.hourlyPrices from database
+  const getPriceForHourSlot = (court: Court, dateStr: string, hourNum: number, custType: 'App' | 'Walkin'): number => {
+    const isWeekend = getDayType(dateStr) === 'T7 - CN';
+    const dayKey = isWeekend ? 'weekend' : 'weekday';
+    
+    let timeKey = 'base';
     if (isWeekend) {
-      if (hourNum >= 5 && hourNum < 22) {
-        return custType === 'App' ? 100000 : 110000;
-      }
-      return 70000;
+      if (hourNum >= 5 && hourNum < 16) timeKey = 'base';
+      else if (hourNum >= 16 && hourNum < 22) timeKey = 'peak';
+      else timeKey = 'late';
     } else {
-      if (hourNum >= 5 && hourNum < 9) return custType === 'App' ? 70000 : 80000;
-      if (hourNum >= 9 && hourNum < 16) return custType === 'App' ? 60000 : 70000;
-      if (hourNum >= 16 && hourNum < 22) return custType === 'App' ? 100000 : 110000;
-      return 70000;
+      if (hourNum >= 5 && hourNum < 9) timeKey = 'morning';
+      else if (hourNum >= 9 && hourNum < 16) timeKey = 'base';
+      else if (hourNum >= 16 && hourNum < 22) timeKey = 'peak';
+      else timeKey = 'late';
     }
+    
+    // In POS we only have 'App' and 'Walkin'. But pricing distinguishes account, guest, fixed.
+    const custKey = custType === 'App' ? 'account' : 'guest';
+
+    let exactKey = `${dayKey}.${timeKey}.${custKey}`;
+    if (timeKey === 'late') {
+        exactKey = `late.${custKey}`;
+    }
+
+    const hp = court?.hourlyPrices || {};
+
+    if (hp[exactKey] !== undefined) return hp[exactKey];
+
+    // Baseline fallback if rule is not found in database rules yet (matches PricingView.tsx exactly)
+    if (timeKey === 'base') return 45000;
+    if (timeKey === 'morning') return 55000;
+    if (timeKey === 'peak') return 90000;
+    if (timeKey === 'late') return 60000;
+
+    return 60000;
   };
 
   // Standard pricing calculator with high resolution time slices
@@ -241,7 +244,7 @@ export default function PosGridView({
         const isHalfHour = slotTime.split(':')[1] === '30';
         const hourNum = hour + (isHalfHour ? 0.5 : 0);
         
-        const basePrice = getPriceForHourSlot(dateStr, hourNum, custType);
+        const basePrice = getPriceForHourSlot(court, dateStr, hourNum, custType);
         total += basePrice * 0.5;
       } else {
         total += (court.pricePerHour * 0.5);
@@ -259,7 +262,7 @@ export default function PosGridView({
       const slots = [...(selectedSlots[courtId] || [])].sort((a, b) => TIME_SLOTS.indexOf(a) - TIME_SLOTS.indexOf(b));
       if (slots.length > 0) {
         const start = slots[0];
-        const duration = slots.length >= 2 ? (slots.length - 1) * 0.5 : 0.5;
+        const duration = slots.length * 0.5;
         grandTotal += calculateBookingPrice(courtId, selectedDateISO, start, duration, customerType);
       }
     });
@@ -275,7 +278,7 @@ export default function PosGridView({
       const slots = [...(selectedSlots[courtId] || [])].sort((a, b) => TIME_SLOTS.indexOf(a) - TIME_SLOTS.indexOf(b));
       const startSlot = slots[0];
       const countSlots = slots.length;
-      const durVal = countSlots >= 2 ? (countSlots - 1) * 0.5 : 0.5;
+      const durVal = countSlots * 0.5;
 
       // Populating modal fields with pre-filled selections
       setModalCourtId(courtId);
@@ -311,21 +314,17 @@ export default function PosGridView({
         const slots = [...(selectedSlots[courtId] || [])].sort((a, b) => TIME_SLOTS.indexOf(a) - TIME_SLOTS.indexOf(b));
         if (slots.length < 1) return;
         startSlot = slots[0];
-        duration = slots.length >= 2 ? (slots.length - 1) * 0.5 : 0.5;
+        duration = slots.length * 0.5;
         
-        if (slots.length >= 2) {
-          endSlot = slots[slots.length - 1];
-        } else {
-          const startIdx = TIME_SLOTS.indexOf(startSlot);
-          endSlot = TIME_SLOTS[startIdx + 1] || '23:30';
-        }
+        const startIdx = TIME_SLOTS.indexOf(startSlot);
+        endSlot = TIME_SLOTS[startIdx + slots.length] || '24:00';
       } else {
         startSlot = modalStartTime;
         duration = modalDuration;
         const startIdx = TIME_SLOTS.indexOf(modalStartTime);
         const numSlots = Math.round(modalDuration / 0.5);
         const endIdx = startIdx + numSlots;
-        endSlot = TIME_SLOTS[endIdx] || '23:30';
+        endSlot = TIME_SLOTS[endIdx] || '24:00';
       }
 
       const id = `BK${Math.floor(100 + Math.random() * 900) + idx}`;
@@ -538,8 +537,8 @@ export default function PosGridView({
                 const slots = [...(selectedSlots[courtId] || [])].sort((a, b) => TIME_SLOTS.indexOf(a) - TIME_SLOTS.indexOf(b));
                 if (slots.length === 0) return null;
                 const start = slots[0];
-                const end = slots[slots.length - 1];
-                const durMin = slots.length >= 2 ? (slots.length - 1) * 30 : 30;
+                const end = TIME_SLOTS[TIME_SLOTS.indexOf(start) + slots.length] || '24:00';
+                const durMin = slots.length * 30;
                 return (
                   <p key={courtId} className="font-sans text-[11px] leading-tight">
                     • <b>{court?.name}</b>: {start} ➜ {end} ({durMin} phút)
@@ -659,51 +658,60 @@ export default function PosGridView({
                   <span className="text-xs font-extrabold uppercase tracking-wider">Xử lý Ngoại lệ (Manual Override)</span>
                 </div>
                 <p className="text-xs text-rose-600 leading-relaxed">
-                  Cấp quyền cho nhân viên trực ca can thiệp thủ công vào luồng tự động khi hỗ trợ sân trực tiếp.
+                  Cấp quyền cho nhân viên trực ca can thiệp thủ công vào luồng tự động khi hỗ trợ sân trực tiếp (Khách về sớm, vắng mặt không lý do).
                 </p>
 
-                <div className="flex gap-3">
-                  {/* Cancel / Absent button for Fixed blocks */}
-                  {(activeDetailBooking.customerName || '').includes('Cố định') ? (
-                    <button
-                      onClick={() => {
-                        onUpdateBookingStatus(activeDetailBooking.id, 'No-show');
-                        setActiveDetailBooking(null);
-                        alert('Đơn cố định được cập nhật thành công: Vắng mặt (No-show). Không cộng tích điểm.');
-                      }}
-                      className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
-                    >
-                      <AlertTriangle size={14} />
-                      Vắng mặt (No-show)
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => {
-                        onUpdateBookingStatus(activeDetailBooking.id, 'Cancelled');
-                        setActiveDetailBooking(null);
-                        alert('Đã hủy đơn thành công. Trạng thái giải phóng sân bãi.');
-                      }}
-                      className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
-                    >
-                      <X size={14} />
-                      Nhấp hủy đơn
-                    </button>
-                  )}
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => {
+                      onUpdateBookingStatus(activeDetailBooking.id, 'No-show', { cancelledReason: 'no_show', paymentStatus: 'cancelled' });
+                      setActiveDetailBooking(null);
+                      alert('Cập nhật trạng thái thành công: Vắng mặt (No-show). Không cộng tích điểm.');
+                    }}
+                    className="col-span-1 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                  >
+                    <AlertTriangle size={14} />
+                    Vắng mặt (No-show)
+                  </button>
 
-                  {/* Mark Completed early */}
-                  {activeDetailBooking.status !== 'Completed' && (
-                    <button
-                      onClick={() => {
-                        onUpdateBookingStatus(activeDetailBooking.id, 'Completed');
-                        setActiveDetailBooking(null);
-                        alert('Đã đánh dấu hoàn tất. Khách về sớm, thành công giải phóng sân.');
-                      }}
-                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                    >
-                      <CheckCircle2 size={14} />
-                      Hoàn tất (Completed)
-                    </button>
-                  )}
+                  <button
+                    onClick={() => {
+                      onUpdateBookingStatus(activeDetailBooking.id, 'Cancelled', { cancelledReason: 'user_cancelled', paymentStatus: 'cancelled' });
+                      setActiveDetailBooking(null);
+                      alert('Đã hủy đơn thành công. Trạng thái giải phóng sân bãi.');
+                    }}
+                    className="col-span-1 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                  >
+                    <X size={14} />
+                    Nhấp hủy đơn
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      const currentEndTimeStr = activeDetailBooking.endTime;
+                      let newEndTime = currentEndTimeStr;
+                      const now = new Date();
+                      const h = now.getHours();
+                      const m = now.getMinutes();
+                      let roundedMins = (m <= 30) ? h * 60 + 30 : (h + 1) * 60;
+                      
+                      const origParts = currentEndTimeStr.split(':').map(Number);
+                      const origMins = origParts[0] * 60 + origParts[1];
+                      if (roundedMins < origMins) {
+                         const newH = Math.floor(roundedMins / 60);
+                         const newM = roundedMins % 60;
+                         newEndTime = `${newH.toString().padStart(2, '0')}:${newM.toString().padStart(2, '0')}`;
+                      }
+
+                      onUpdateBookingStatus(activeDetailBooking.id, 'Completed', { endTime: newEndTime });
+                      setActiveDetailBooking(null);
+                      alert(`Đã đánh dấu hoàn tất. Khách về sớm, thành công giải phóng sân từ ${newEndTime}.`);
+                    }}
+                    className="col-span-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  >
+                    <CheckCircle2 size={14} />
+                    Đánh dấu Hoàn tất (Khách về sớm)
+                  </button>
                 </div>
               </div>
             </div>
@@ -729,7 +737,7 @@ export default function PosGridView({
           modalCourtObj = courts.find(c => c.id === targetCourtId);
           const [startH, startM] = (modalStartTime || '05:00').split(':').map(Number);
           const hourNumForUnit = startH + (startM === 30 ? 0.5 : 0);
-          const slotHourlyRateBase = getPriceForHourSlot(modalDate, hourNumForUnit, customerType);
+          const slotHourlyRateBase = getPriceForHourSlot(modalCourtObj, modalDate, hourNumForUnit, customerType);
           effectiveUnitPrice = slotHourlyRateBase;
         }
 
@@ -939,8 +947,8 @@ export default function PosGridView({
                           const slots = [...(selectedSlots[courtId] || [])].sort((a, b) => TIME_SLOTS.indexOf(a) - TIME_SLOTS.indexOf(b));
                           if (slots.length === 0) return null;
                           const start = slots[0];
-                          const end = slots[slots.length - 1];
-                          const duration = slots.length >= 2 ? (slots.length - 1) * 0.5 : 0.5;
+                          const duration = slots.length * 0.5;
+                          const end = TIME_SLOTS[TIME_SLOTS.indexOf(start) + slots.length] || '24:00';
                           const price = calculateBookingPrice(courtId, selectedDateISO, start, duration, customerType);
                           return (
                             <div key={courtId} className="flex justify-between items-center text-xs bg-white p-2.5 rounded-xl border border-slate-100 shadow-2xs">

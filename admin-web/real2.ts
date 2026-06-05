@@ -901,7 +901,7 @@ async function startServer() {
 
   app.put("/api/data-bookings/:id", async (req, res) => {
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, cancelledReason, endTime } = req.body;
     let mappedStatus = status.toLowerCase();
     if (status === 'Refund_Pending') mappedStatus = 'refund_pending';
 
@@ -919,6 +919,14 @@ async function startServer() {
         cacheBookings[idx].paidAt = { _seconds: Math.floor(now.getTime() / 1000), _nanoseconds: 0 };
         cacheBookings[idx].paymentStatus = 'success';
       }
+      if (mappedStatus === 'cancelled' || mappedStatus === 'no-show') {
+         cacheBookings[idx].paymentStatus = 'cancelled';
+         cacheBookings[idx].cancelledAt = { _seconds: Math.floor(now.getTime() / 1000), _nanoseconds: 0 };
+         if (cancelledReason) cacheBookings[idx].cancelledReason = cancelledReason;
+      }
+      if (endTime !== undefined) {
+         cacheBookings[idx].endTime = endTime;
+      }
     }
 
     try {
@@ -933,6 +941,28 @@ async function startServer() {
           updateFields.paidAt = nowTimestamp;
           updateFields.paymentStatus = 'success';
         }
+        if (mappedStatus === 'cancelled' || mappedStatus === 'no-show') {
+          updateFields.paymentStatus = 'cancelled';
+          updateFields.cancelledAt = nowTimestamp;
+          if (cancelledReason) updateFields.cancelledReason = cancelledReason;
+        }
+        if (endTime !== undefined) {
+           let endMinutes = 0;
+           if (typeof endTime === 'string') {
+             const parts = endTime.split(':');
+             if (parts.length === 2) {
+               endMinutes = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+             } else {
+               endMinutes = parseInt(endTime);
+             }
+           } else {
+             endMinutes = endTime;
+           }
+           if (endMinutes > 0) {
+             updateFields.endTime = endMinutes;
+           }
+        }
+
         await db.collection("bookings").doc(id).update(updateFields);
       }
     } catch (error: any) {
@@ -998,8 +1028,14 @@ async function startServer() {
   app.get("/api/data-wallet", async (req, res) => {
     try {
       if (db) {
-        const snap = await db.collection("walletTransactions").limit(5).get();
+        const snap = await db.collection("walletTransactions").get();
         cacheWallet = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        // sort cache by createdAt decending if possible in memory
+        cacheWallet.sort((a, b) => {
+          const tA = a.createdAt?._seconds || 0;
+          const tB = b.createdAt?._seconds || 0;
+          return tB - tA; // newest first
+        });
       }
     } catch (error: any) {
       console.warn("⚠️ API Warning: Cannot fetch wallet transactions from Firestore (Resource Exhausted). Supplying in-memory array.", error.message);
@@ -1011,6 +1047,72 @@ async function startServer() {
     const { id } = req.params;
     const { status } = req.body;
     const updatedStatus = status || 'completed';
+
+    try {
+      if (db) {
+        const txRef = db.collection("walletTransactions").doc(id);
+        const txDoc = await txRef.get();
+        
+        if (txDoc.exists) {
+          const txData = txDoc.data();
+          if (updatedStatus === 'completed' && txData?.status === 'pending') {
+            const userId = txData.userId;
+            const amount = txData.amount || 0;
+            
+            // Look up the user
+            let userRef = db.collection("users").doc(userId);
+            let userDoc = await userRef.get();
+            
+            if (!userDoc.exists) {
+              const byEmail = await db.collection("users").where("email", "==", userId).get();
+              if (!byEmail.empty) { userDoc = byEmail.docs[0]; userRef = userDoc.ref; }
+              else {
+                const byPhone = await db.collection("users").where("phone", "==", userId).get();
+                if (!byPhone.empty) { userDoc = byPhone.docs[0]; userRef = userDoc.ref; }
+                else {
+                  const byName = await db.collection("users").where("fullName", "==", userId).get();
+                  if (!byName.empty) { userDoc = byName.docs[0]; userRef = userDoc.ref; }
+                }
+              }
+            }
+
+            // If the user document exists, check wallet balance
+            if (userDoc.exists) {
+              const currentBalance = userDoc.data()?.walletBalance || 0;
+              const absAmount = Math.abs(amount);
+              
+              if (txData.description === "Withdrawal request.") {
+                if (currentBalance < absAmount) {
+                  return res.status(400).json({ error: "Số dư ví của khách hàng không đủ để thực hiện hoàn tiền!" });
+                }
+                // Deduct wallet balance
+                await userRef.update({
+                  walletBalance: admin.firestore.FieldValue.increment(-absAmount)
+                });
+              } else {
+                // If it's a deposit or something else, we might want to add (if appropriate)
+                // Assuming default is refund deposit if not a withdrawal.
+                await userRef.update({
+                  walletBalance: admin.firestore.FieldValue.increment(absAmount)
+                });
+              }
+            } else {
+              return res.status(404).json({ error: "Không tìm thấy thông tin ví tài khoản khách hàng này!" });
+            }
+          }
+        }
+
+        await txRef.set({
+          status: updatedStatus,
+          updatedAt: {
+            _seconds: Math.floor(Date.now() / 1000),
+            _nanoseconds: 0
+          }
+        }, { merge: true });
+      }
+    } catch (error: any) {
+      console.warn("⚠️ API Warning: Cannot update wallet transaction in Firestore (Resource Exhausted). Saved in memory.");
+    }
 
     // Optimistically update memory cache
     const idx = cacheWallet.findIndex(w => w.id === id);
@@ -1025,19 +1127,6 @@ async function startServer() {
       });
     }
 
-    try {
-      if (db) {
-        await db.collection("walletTransactions").doc(id).set({
-          status: updatedStatus,
-          updatedAt: {
-            _seconds: Math.floor(Date.now() / 1000),
-            _nanoseconds: 0
-          }
-        }, { merge: true });
-      }
-    } catch (error: any) {
-      console.warn("⚠️ API Warning: Cannot update wallet transaction in Firestore (Resource Exhausted). Saved in memory.");
-    }
     return res.json({ success: true, id, status: updatedStatus });
   });
 

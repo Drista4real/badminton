@@ -385,10 +385,7 @@ export default function FinanceView({ refunds, bookings, onApproveRefund }: Fina
                         {/* Actions */}
                         <td className="px-6 py-4 text-center">
                           <button
-                            onClick={() => {
-                              onApproveRefund(ref.id);
-                              alert(`Kế toán xác nhận: Đơn hoàn tiền ${ref.id} trị giá ${ref.amount.toLocaleString('vi-VN')}đ đã được chuyển khoản và cập nhật thành công!`);
-                            }}
+                            onClick={() => onApproveRefund(ref.id)}
                             className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] px-3.5 py-2 rounded-xl flex items-center justify-center gap-1.5 mx-auto transition-all shadow-xs shrink-0 cursor-pointer border border-indigo-700"
                           >
                             <CheckCircle size={12} />

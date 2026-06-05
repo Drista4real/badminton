@@ -213,11 +213,12 @@ export default function App() {
           accountNumber: w.bankAccountNumber || 'N/A',
           accountHolder: w.bankAccountName || 'N/A',
           amount: w.amount || 0,
-          status: w.status === 'pending' ? 'Refund_Pending' : 'Cancelled',
+          status: (w.status || '').toLowerCase() === 'pending' ? 'Refund_Pending' : 'Cancelled',
           courtName: 'Chi tiết ngân sách',
           timeSlot: '-',
           date: w.createdAt?._seconds ? getLocalDateString(w.createdAt._seconds * 1000) : getLocalDateString()
         }));
+        // Filter out items that might not be refunds if needed, but for now map everything 
         if (mappedRefunds.length > 0) setRefunds(mappedRefunds);
       }
       
@@ -323,9 +324,11 @@ export default function App() {
     }
   };
 
-  const handleUpdateBookingStatus = async (id: string, newStatus: Booking['status']) => {
+  const handleUpdateBookingStatus = async (id: string, newStatus: Booking['status'], updates?: any) => {
     setBookings(prev => prev.map(booking => {
-      if (booking.id === id) return { ...booking, status: newStatus };
+      if (booking.id === id) {
+        return { ...booking, status: newStatus, ...updates };
+      }
       return booking;
     }));
 
@@ -333,7 +336,7 @@ export default function App() {
       await fetch(`/api/data-bookings/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus })
+        body: JSON.stringify({ status: newStatus, ...updates })
       });
     } catch(err) {
       console.error(err);
@@ -542,13 +545,28 @@ export default function App() {
     const refund = refunds.find(r => r.id === refundId);
     if (!refund) return;
 
-    // Change refund request to Cancelled / Completed archiving state
-    setRefunds(prev => prev.map(r => r.id === refundId ? { ...r, status: 'Cancelled' } : r));
-    
-    // Set corresponding booking to Cancelled too
-    setBookings(prev => prev.map(b => b.id === refund.bookingId ? { ...b, status: 'Cancelled' } : b));
-
     try {
+      // First update the wallet transaction which will check balance
+      const walletRes = await fetch(`/api/data-wallet/${refundId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'completed' })
+      });
+
+      if (!walletRes.ok) {
+        const errorData = await walletRes.json().catch(() => ({}));
+        alert(errorData.error || 'Server error occurred during refund processing');
+        return;
+      }
+
+      // If successful, update local states
+      setRefunds(prev => prev.map(r => r.id === refundId ? { ...r, status: 'Cancelled' } : r));
+      setBookings(prev => prev.map(b => b.id === refund.bookingId ? { ...b, status: 'Cancelled' } : b));
+
+      // Display success message
+      alert(`Xác nhận hoàn tiền thành công!\nYêu cầu ${refund.id} trị giá ${refund.amount.toLocaleString('vi-VN')}đ đã được chuyển khoản thủ công.`);
+
+      // Update the corresponding booking state in backend
       if (refund.bookingId && refund.bookingId !== 'N/A') {
         await fetch(`/api/data-bookings/${refund.bookingId}`, {
           method: 'PUT',
@@ -558,6 +576,7 @@ export default function App() {
       }
     } catch(err) {
       console.error(err);
+      alert('Network error while processing refund');
     }
   };
 
@@ -658,10 +677,8 @@ export default function App() {
 
           {activeTab === 'pricing' && (
             <PricingView
-              pricingRules={pricingRules}
-              onUpdatePricing={handleUpdatePricing}
-              onAddPricingRule={handleAddPricingRule}
-              onResetPricing={handleResetPricing}
+              courts={courts}
+              onUpdateCourt={handleUpdateCourt}
             />
           )}
         </main>

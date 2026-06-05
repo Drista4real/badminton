@@ -78,3 +78,28 @@ app.*.map.json
 **/ios/Runner/GeneratedPluginRegistrant.*
 **/ios/DerivedData/
 **/ios/**/xcuserdata/
+
+
+# Visual Studio
+.vs/
+
+# Build folders
+bin/
+obj/
+
+# Logs
+*.log
+out*.txt
+build*.txt
+cmd_log.txt
+
+# Backup
+*.bak
+.vs/
+obj/
+*.log
+out*.txt
+build*.txt
+*.bak
+*.log
+*.txt
