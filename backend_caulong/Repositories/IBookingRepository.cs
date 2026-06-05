@@ -131,7 +131,7 @@ public sealed class BookingSuspendedWriteException : Exception
 public sealed class ProtectedCourtWriteException : Exception
 {
     public ProtectedCourtWriteException(string courtId)
-        : base($"Court '{courtId}' is protected and requires at least one paid order.")
+        : base($"Court '{courtId}' is protected and requires at least one confirmed or completed order.")
     {
         CourtId = courtId;
     }

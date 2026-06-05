@@ -23,7 +23,6 @@ import '../views/app/onboarding/onboarding_screen.dart';
 import '../views/app/payment/payment_screen.dart';
 import '../views/app/payment/payment_success_screen.dart';
 import '../views/app/profile/change_password_screen.dart';
-import '../views/app/profile/map_screen.dart';
 import '../views/app/profile/profile_screen.dart';
 import '../views/app/splash/splash_screen.dart';
 import '../views/app/wallet/wallet_screen.dart';
@@ -114,11 +113,6 @@ class AppPages {
       name: AppRoutes.profile,
       page: () => const ProfileScreen(),
       binding: ProfileBinding(),
-      middlewares: [AuthMiddleware()],
-    ),
-    GetPage(
-      name: AppRoutes.map,
-      page: () => const MapScreen(),
       middlewares: [AuthMiddleware()],
     ),
     GetPage(

@@ -14,7 +14,11 @@ class ApiClient {
   String get baseUrl {
     const configured = String.fromEnvironment('API_BASE_URL');
     if (configured.isNotEmpty) return configured;
-    return kIsWeb ? 'http://localhost:5011' : 'http://localhost:5000';
+    if (kIsWeb) return 'http://localhost:5011';
+
+    return defaultTargetPlatform == TargetPlatform.android
+        ? 'http://10.0.2.2:5011'
+        : 'http://localhost:5011';
   }
 
   Future<http.Response> postJson(

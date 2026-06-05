@@ -32,6 +32,10 @@ public interface IOrderRepository
         double vndPerPoint,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<string>> GetCompletedOrderIdsPendingRewardPointsAsync(
+        int pageSize,
+        CancellationToken cancellationToken = default);
+
     Task<OrderPaymentWriteResult> ProcessPaidWebhookAsync(
         OrderPaymentWriteRequest request,
         CancellationToken cancellationToken = default);

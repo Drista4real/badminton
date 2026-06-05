@@ -99,6 +99,7 @@ class _HistoryTabBar extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
         ),
         child: TabBar(
+          isScrollable: true,
           onTap: controller.selectTab,
           indicator: BoxDecoration(
             color: AppColors.primary,
@@ -162,6 +163,8 @@ class _BookingList extends GetView<HistoryController> {
         return Icons.task_alt_rounded;
       case 3:
         return Icons.cancel_outlined;
+      case 4:
+        return Icons.calendar_month_rounded;
       default:
         return Icons.sports_tennis_rounded;
     }
@@ -305,6 +308,11 @@ class _FixedBookingCard extends GetView<HistoryController> {
           ),
           const Divider(height: 24),
           _IconLabel(
+            icon: Icons.event_rounded,
+            text: 'Buổi chơi: ${controller.bookingDateLabel(booking)}',
+          ),
+          const SizedBox(height: 8),
+          _IconLabel(
             icon: Icons.calendar_today_rounded,
             text: controller.fixedDaysLabel(booking),
           ),
@@ -413,6 +421,29 @@ class _CancelRefundSheetState extends State<_CancelRefundSheet> {
     super.dispose();
   }
 
+  String _formatDate(DateTime date) {
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    return '$day/$month/${date.year}';
+  }
+
+  String _formatMinutes(int minutes) {
+    final hour = (minutes ~/ 60).toString().padLeft(2, '0');
+    final minute = (minutes % 60).toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
+  String get _courtReference {
+    final courtId = widget.booking.courtId.trim();
+    return courtId.isEmpty ? widget.booking.id : courtId;
+  }
+
+  String get _bookingTimeReference {
+    return '${_formatDate(widget.booking.bookingDate)} '
+        '${_formatMinutes(widget.booking.startTime)} - '
+        '${_formatMinutes(widget.booking.endTime)}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = Get.find<HistoryController>();
@@ -469,6 +500,45 @@ class _CancelRefundSheetState extends State<_CancelRefundSheet> {
             ),
             if (_refundMethod == 'bank') ...[
               const SizedBox(height: 14),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF5F7FA),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE3E8EF)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Thông tin đối soát',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.black,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Sân đã đặt: $_courtReference',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF4B5563),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Giờ đã đặt: $_bookingTimeReference',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF4B5563),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
               TextField(
                 controller: _bankNameController,
                 textInputAction: TextInputAction.next,

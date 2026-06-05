@@ -36,6 +36,7 @@ class HistoryController extends GetxController {
     'history.tab.booked',
     'history.tab.completed',
     'history.tab.cancelled',
+    'history.tab.contracts',
   ];
 
   static List<String> get statusTabs =>
@@ -77,6 +78,8 @@ class HistoryController extends GetxController {
         return 'Chưa có đơn đã kết thúc';
       case 3:
         return 'Chưa có đơn đã hủy';
+      case 4:
+        return 'Chưa có hợp đồng cố định';
       default:
         return 'Chưa có lịch sử đặt sân';
     }
@@ -90,6 +93,8 @@ class HistoryController extends GetxController {
         return 'Các lượt chơi đã hoàn thành sẽ hiển thị tại đây.';
       case 3:
         return 'Các đơn đã hủy hoặc đã báo nghỉ sẽ hiển thị tại đây.';
+      case 4:
+        return 'Các buổi chơi trong hợp đồng cố định của bạn sẽ hiển thị tại đây.';
       default:
         return 'Các đơn đặt sân của bạn sẽ hiển thị tại đây.';
     }
@@ -557,6 +562,8 @@ class HistoryController extends GetxController {
         return booking.status == OrderStatus.completed;
       case 3:
         return _isCancelled(booking.status);
+      case 4:
+        return isFixedSchedule(booking);
       default:
         return true;
     }

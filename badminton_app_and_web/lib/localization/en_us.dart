@@ -54,6 +54,7 @@ const Map<String, String> enUs = {
   'history.tab.booked': 'Booked',
   'history.tab.completed': 'Completed',
   'history.tab.cancelled': 'Cancelled',
+  'history.tab.contracts': 'Contracts',
   'paymentSuccess.title': 'Booking successful!',
   'paymentSuccess.bookingCode': 'Booking code: #@code',
   'paymentSuccess.date': 'Date',

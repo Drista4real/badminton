@@ -26,6 +26,12 @@ public sealed class OrderDocument
     [FirestoreProperty("renewedFromOrderId")]
     public string? RenewedFromOrderId { get; set; }
 
+    [FirestoreProperty("rewardPoints")]
+    public int RewardPoints { get; set; }
+
+    [FirestoreProperty("rewardPointsGranted")]
+    public bool RewardPointsGranted { get; set; }
+
     [FirestoreProperty("createdAt")]
     public Timestamp CreatedAt { get; set; }
 

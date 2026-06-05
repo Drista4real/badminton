@@ -15,6 +15,5 @@ class AppRoutes {
   static const wallet = '/wallet';
   static const notification = '/notification';
   static const profile = '/profile';
-  static const map = '/map';
   static const changePassword = '/change-password';
 }

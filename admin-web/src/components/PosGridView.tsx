@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Calendar, Check, X, ShieldAlert, Award, User, Phone, FileText, 
   Coins, CreditCard, ChevronLeft, ChevronRight, CheckCircle2, RefreshCw, AlertTriangle,
@@ -367,12 +367,65 @@ export default function PosGridView({
     return parts[0].slice(0, 2) + '***@' + parts[1];
   };
 
-  // Filtered customer autocomplete
-  const filteredCustomers = customers.filter(c => 
-    c.name.toLowerCase().includes(searchCustQuery.toLowerCase()) || 
-    c.phone.includes(searchCustQuery) ||
-    c.email.toLowerCase().includes(searchCustQuery.toLowerCase())
-  );
+  const normalizePhoneSearch = (value?: string) => {
+    let digits = (value || '').replace(/\D/g, '');
+    if (digits.startsWith('0084')) {
+      digits = `0${digits.slice(4)}`;
+    } else if (digits.startsWith('84') && digits.length === 11) {
+      digits = `0${digits.slice(2)}`;
+    }
+    return digits;
+  };
+
+  const appCustomers = useMemo(() => {
+    const internalRoles = new Set(['admin', 'staff', 'accountant']);
+    return customers.filter((customer) => {
+      const role = (customer.role || 'customer').toLowerCase();
+      if (internalRoles.has(role)) return false;
+      if (customer.isLocked) return false;
+      return Boolean((customer.email || '').trim() || (customer.phone || '').trim());
+    });
+  }, [customers]);
+
+  const filteredCustomers = useMemo(() => {
+    const query = searchCustQuery.trim();
+    if (!query) return [];
+
+    const normalizedQuery = query.toLowerCase();
+    const normalizedPhoneQuery = normalizePhoneSearch(query);
+
+    return appCustomers
+      .map((customer) => {
+        const name = (customer.name || '').toLowerCase();
+        const email = (customer.email || '').toLowerCase();
+        const phone = normalizePhoneSearch(customer.phone);
+
+        let score = Number.POSITIVE_INFINITY;
+        if (email === normalizedQuery || (normalizedPhoneQuery && phone === normalizedPhoneQuery)) {
+          score = 0;
+        } else if (
+          email.startsWith(normalizedQuery) ||
+          (normalizedPhoneQuery && phone.startsWith(normalizedPhoneQuery))
+        ) {
+          score = 1;
+        } else if (
+          email.includes(normalizedQuery) ||
+          (normalizedPhoneQuery && phone.includes(normalizedPhoneQuery))
+        ) {
+          score = 2;
+        } else if (name.startsWith(normalizedQuery)) {
+          score = 3;
+        } else if (name.includes(normalizedQuery)) {
+          score = 4;
+        }
+
+        return { customer, score };
+      })
+      .filter((item) => Number.isFinite(item.score))
+      .sort((a, b) => a.score - b.score || a.customer.name.localeCompare(b.customer.name, 'vi'))
+      .slice(0, 8)
+      .map((item) => item.customer);
+  }, [appCustomers, searchCustQuery]);
 
   return (
     <div className="space-y-6">
@@ -803,7 +856,10 @@ export default function PosGridView({
                           placeholder="Nhập số điện thoại hoặc tên..."
                           className="w-full text-xs text-slate-800 bg-white border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 outline-hidden focus:border-[#005C53] transition-all font-medium h-[41px]"
                           value={searchCustQuery}
-                          onChange={(e) => setSearchCustQuery(e.target.value)}
+                          onChange={(e) => {
+                            setSearchCustQuery(e.target.value);
+                            setSelectedCustomer(null);
+                          }}
                         />
                       </div>
 
@@ -813,7 +869,7 @@ export default function PosGridView({
                           {filteredCustomers.length === 0 ? (
                             <p className="p-3 text-[11px] text-center text-slate-400">Không tìm thấy khách hàng nào</p>
                           ) : (
-                            filteredCustomers.slice(0, 4).map((c) => (
+                            filteredCustomers.map((c) => (
                               <div
                                 key={c.id}
                                 onClick={() => { setSelectedCustomer(c); setSearchCustQuery(c.name); }}

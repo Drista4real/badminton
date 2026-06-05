@@ -686,6 +686,14 @@ public sealed class BookingRepository : IBookingRepository
                 .Document($"refund_fixed_absence_{SanitizeDocumentId(trimmedBookingId)}");
             var refundTransactionSnapshot = await transaction.GetSnapshotAsync(refundTransactionRef, cancellationToken);
             var refundAlreadyExists = refundTransactionSnapshot.Exists;
+            await _cancellationPolicyService.ApplyCancellationAsync(
+                transaction,
+                new CancellationPolicyRequest(
+                    trimmedUserId,
+                    new[] { bookingSnapshot },
+                    nowUtc,
+                    now),
+                cancellationToken);
 
             if (!refundAlreadyExists)
             {
@@ -769,7 +777,8 @@ public sealed class BookingRepository : IBookingRepository
             var paidAt = GetTimestamp(orderSnapshot, "paidAt")
                 ?? GetTimestamp(orderSnapshot, "confirmedAt")
                 ?? throw new FixedAbsenceWriteNotAllowedException("Đơn chưa có thời điểm thanh toán hợp lệ.");
-            var elapsed = DateTime.UtcNow - paidAt.ToDateTime();
+            var nowUtc = DateTime.UtcNow;
+            var elapsed = nowUtc - paidAt.ToDateTime();
             var refundRate = elapsed <= TimeSpan.FromHours(5) ? 0.5d : 0.25d;
             var paidMoneyAmount = CalculatePaidMoneyAmount(orderSnapshot);
             var refundAmount = NormalizeMoney(paidMoneyAmount * refundRate);
@@ -786,7 +795,7 @@ public sealed class BookingRepository : IBookingRepository
                 .Where(snapshot => snapshot.Exists)
                 .Select(snapshot => snapshot.Reference.Id)
                 .ToArray();
-            var now = Timestamp.FromDateTime(DateTime.UtcNow);
+            var now = Timestamp.FromDateTime(nowUtc);
             var nextStatus = refundMethod == "wallet"
                 ? OrderStatuses.Cancelled
                 : OrderStatuses.RefundPending;
@@ -806,6 +815,15 @@ public sealed class BookingRepository : IBookingRepository
                     .Document($"refund_cancel_order_{SanitizeDocumentId(trimmedOrderId)}");
                 refundTransactionSnapshot = await transaction.GetSnapshotAsync(refundTransactionRef, cancellationToken);
             }
+
+            await _cancellationPolicyService.ApplyCancellationAsync(
+                transaction,
+                new CancellationPolicyRequest(
+                    trimmedUserId,
+                    bookingSnapshots,
+                    nowUtc,
+                    now),
+                cancellationToken);
 
             transaction.Set(orderRef, new Dictionary<string, object>
             {
@@ -950,28 +968,47 @@ public sealed class BookingRepository : IBookingRepository
             var points = Math.Max(0, (int)Math.Floor(sessionAmount / VndPerRewardPoint));
             var now = Timestamp.FromDateTime(nowUtc);
 
-            if (points > 0 && !GetBool(bookingSnapshot, "rewardPointsGranted"))
+            var alreadyRewardPointsGranted = GetBool(bookingSnapshot, "rewardPointsGranted");
+            var rewardPointsGranted = alreadyRewardPointsGranted;
+            var rewardPointsSkippedReason = string.Empty;
+            if (points > 0 && !alreadyRewardPointsGranted)
             {
                 var userRef = _firestoreDb.Collection("users").Document(booking.UserId);
-                transaction.Set(userRef, new Dictionary<string, object>
+                var userSnapshot = await transaction.GetSnapshotAsync(userRef, cancellationToken);
+                if (userSnapshot.Exists && !string.IsNullOrWhiteSpace(GetString(userSnapshot, "email")))
                 {
-                    ["points"] = FieldValue.Increment(points),
-                    ["loyaltyPoints"] = FieldValue.Increment(points),
-                    ["rewardPoints"] = FieldValue.Increment(points),
-                    ["updatedAt"] = now,
-                }, SetOptions.MergeAll);
+                    transaction.Set(userRef, new Dictionary<string, object>
+                    {
+                        ["points"] = FieldValue.Increment(points),
+                        ["loyaltyPoints"] = FieldValue.Increment(points),
+                        ["rewardPoints"] = FieldValue.Increment(points),
+                        ["updatedAt"] = now,
+                    }, SetOptions.MergeAll);
+                    rewardPointsGranted = true;
+                }
+                else
+                {
+                    points = 0;
+                    rewardPointsSkippedReason = "missing_email";
+                }
             }
 
-            transaction.Set(bookingRef, new Dictionary<string, object>
+            var bookingUpdates = new Dictionary<string, object>
             {
                 ["status"] = BookingStatuses.Completed,
                 ["orderStatus"] = OrderStatuses.Confirmed,
                 ["completedAt"] = now,
                 ["rewardPoints"] = points,
-                ["rewardPointsGranted"] = true,
+                ["rewardPointsGranted"] = rewardPointsGranted || points <= 0,
                 ["rewardPointsGrantedAt"] = now,
                 ["updatedAt"] = now,
-            }, SetOptions.MergeAll);
+            };
+            if (!string.IsNullOrWhiteSpace(rewardPointsSkippedReason))
+            {
+                bookingUpdates["rewardPointsSkippedReason"] = rewardPointsSkippedReason;
+            }
+
+            transaction.Set(bookingRef, bookingUpdates, SetOptions.MergeAll);
 
             if (!HasOpenSiblingBooking(orderBookings, bookingRef.Id))
             {
@@ -1181,17 +1218,17 @@ public sealed class BookingRepository : IBookingRepository
             return;
         }
 
-        var hasPaidOrder = await UserHasPaidOrderAsync(
+        var hasTrustedOrder = await UserHasTrustedOrderAsync(
             transaction,
             userId,
             cancellationToken);
-        if (!hasPaidOrder)
+        if (!hasTrustedOrder)
         {
             throw new ProtectedCourtWriteException(courtSnapshot.Reference.Id);
         }
     }
 
-    private async Task<bool> UserHasPaidOrderAsync(
+    private async Task<bool> UserHasTrustedOrderAsync(
         Transaction transaction,
         string userId,
         CancellationToken cancellationToken)

@@ -2,18 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import '../booking/booking_screen.dart';
-import '../notification/notification_screen.dart';
-import '../wallet/wallet_screen.dart';
-import '../profile/profile_screen.dart';
-
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
-
-  @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
 import '../../../commons/styles/app_colors.dart';
 import '../../../controllers/app/home_controller.dart';
 import '../../../routes/app_routes.dart';
@@ -596,7 +584,7 @@ class HomeScreen extends StatelessWidget {
   }
 
   Widget _buildBottomNav(BuildContext context, HomeController? controller) {
-    final items = [
+    final items = <Map<String, Object>>[
       {'icon': Icons.home_rounded, 'label': 'nav.home'},
       {'icon': Icons.sports_tennis_rounded, 'label': 'nav.booking'},
       {'icon': Icons.account_balance_wallet_rounded, 'label': 'nav.wallet'},
@@ -619,33 +607,17 @@ class HomeScreen extends StatelessWidget {
         top: false,
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: List.generate(items.length, (i) {
-              final isSelected = _selectedNavIndex == i;
-              return GestureDetector(
-                onTap: () {
-                  if (i == 1) {
-                    Get.to(() => const BookingScreen());
-                  } else if (i == 3) {
-                    Get.to(() => const NotificationScreen());
-                  } else if (i == 2) {
-                    Get.to(() => const WalletScreen());
-                  } else if (i == 4) {
-                    Get.to(() => const ProfileScreen());
-                  } else {
-                    setState(() => _selectedNavIndex = i);
-                  }
-                  
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? AppColors.primary.withOpacity(0.1)
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(12),
+          child: controller == null
+              ? _BottomNavRow(
+                  items: items,
+                  selectedIndex: 0,
+                  onTap: (index) => _onBottomNavTap(index, null),
+                )
+              : Obx(
+                  () => _BottomNavRow(
+                    items: items,
+                    selectedIndex: controller.selectedNavIndex.value,
+                    onTap: (index) => _onBottomNavTap(index, controller),
                   ),
                 ),
         ),
@@ -707,7 +679,7 @@ class HomeScreen extends StatelessWidget {
             fit: BoxFit.cover,
             width: 44,
             height: 44,
-            errorBuilder: (_, __, ___) =>
+            errorBuilder: (context, error, stackTrace) =>
                 const Icon(Icons.person, color: Colors.white, size: 24),
           );
         } catch (_) {
@@ -721,7 +693,7 @@ class HomeScreen extends StatelessWidget {
       fit: BoxFit.cover,
       width: 44,
       height: 44,
-      errorBuilder: (_, __, ___) =>
+      errorBuilder: (context, error, stackTrace) =>
           const Icon(Icons.person, color: Colors.white, size: 24),
     );
   }

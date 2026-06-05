@@ -47,6 +47,8 @@ enum OrderStatus {
         return OrderStatus.refundPending;
       case 'no_show':
       case 'No_Show':
+      case 'no-show':
+      case 'No-show':
         return OrderStatus.noShow;
       case 'pending':
       default:

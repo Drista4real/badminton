@@ -10,7 +10,6 @@ const DEMO_ACCOUNTS = [
     id: 'admin',
     name: 'Chủ Sân (Admin)',
     email: 'admin@gmail.com',
-    password: 'Abc@123',
     roleLabel: 'Admin / Chủ Sân',
     icon: ShieldCheck,
     colorClass: 'border-indigo-500/30 bg-indigo-950/20 text-indigo-400 hover:bg-indigo-950/40',
@@ -28,7 +27,6 @@ const DEMO_ACCOUNTS = [
     id: 'nhanvien1',
     name: 'Nhân viên trực sân 1',
     email: 'nhanvien1@gmail.com',
-    password: 'Abc@123',
     roleLabel: 'Trực Sân (Staff)',
     icon: UserCheck,
     colorClass: 'border-emerald-500/30 bg-emerald-950/20 text-emerald-400 hover:bg-emerald-950/40',
@@ -45,7 +43,6 @@ const DEMO_ACCOUNTS = [
     id: 'nhanvien2',
     name: 'Nhân viên trực sân 2',
     email: 'nhanvien2@gmail.com',
-    password: 'Abc@123',
     roleLabel: 'Trực Sân (Staff)',
     icon: UserCheck,
     colorClass: 'border-teal-500/30 bg-teal-950/20 text-teal-400 hover:bg-teal-950/40',
@@ -61,7 +58,6 @@ const DEMO_ACCOUNTS = [
     id: 'ketoan',
     name: 'Kế toán (Accountant)',
     email: 'ketoan@gmail.com',
-    password: 'Abc@123',
     roleLabel: 'Kế toán',
     icon: Wallet,
     colorClass: 'border-amber-500/30 bg-amber-950/20 text-amber-400 hover:bg-amber-950/40',
@@ -114,27 +110,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       }
     } catch (err: any) {
       console.error('Login error:', err);
-      // Client-side instant offline check to guarantee flawless execution
-      const uLower = username.trim().toLowerCase();
-      const fallbackList = [
-        { id: 'admin_account', name: 'Admin', email: 'admin@gmail.com', phone: '0987654321', role: 'admin', password: 'Abc@123' },
-        { id: 'nhanvien1_account', name: 'Nhân viên trực sân 1', email: 'nhanvien1@gmail.com', phone: '0911111111', role: 'staff', password: 'Abc@123' },
-        { id: 'nhanvien2_account', name: 'Nhân viên trực sân 2', email: 'nhanvien2@gmail.com', phone: '0922222222', role: 'staff', password: 'Abc@123' },
-        { id: 'ketoan_account', name: 'Kế toán', email: 'ketoan@gmail.com', phone: '0933333333', role: 'accountant', password: 'Abc@123' }
-      ];
-      
-      const found = fallbackList.find(u => (u.email === uLower || u.phone === username.trim()) && u.password === password);
-      if (found) {
-        onLoginSuccess({
-          id: found.id,
-          name: found.name,
-          email: found.email,
-          phone: found.phone,
-          role: found.role
-        });
-      } else {
-        setErrorMsg('Thông tin đăng nhập không chính xác hoặc lỗi kết nối máy chủ.');
-      }
+      setErrorMsg('Không thể kết nối máy chủ xác thực. Vui lòng thử lại sau.');
     } finally {
       setLoading(false);
     }
@@ -177,7 +153,6 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                     type="button"
                     onClick={() => {
                       setUsername(acc.email);
-                      setPassword(acc.password);
                       setErrorMsg(null);
                     }}
                     className={`w-full text-left p-4 rounded-2xl border transition-all duration-200 cursor-pointer flex gap-4 items-start ${
@@ -197,7 +172,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                         </span>
                       </div>
                       <p className="text-[10px] font-mono text-slate-500 mt-1.5">
-                        Email: {acc.email} | Pass: {acc.password}
+                        Email: {acc.email}
                       </p>
                       
                       {/* Capabilities display - open only if active */}

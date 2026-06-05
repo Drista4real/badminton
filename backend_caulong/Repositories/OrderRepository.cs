@@ -151,18 +151,40 @@ public sealed class OrderRepository : IOrderRepository
                 return;
             }
 
-            if (!IsRewardEligibleCompletedOrder(orderSnapshot))
-            {
-                result = new OrderRewardPointWriteResult(trimmedOrderId, 0, false);
-                return;
-            }
-
             if (GetBool(orderSnapshot, "rewardPointsGranted"))
             {
                 result = new OrderRewardPointWriteResult(
                     trimmedOrderId,
                     GetInt(orderSnapshot, "rewardPoints"),
                     false);
+                return;
+            }
+
+            var now = Timestamp.FromDateTime(DateTime.UtcNow);
+            var bookingSnapshots = await GetRelatedBookingSnapshotsAsync(
+                transaction,
+                orderSnapshot,
+                requestBookingIds: null,
+                cancellationToken);
+            if (IsFixedOrder(bookingSnapshots))
+            {
+                MarkRewardPointsSkipped(
+                    transaction,
+                    orderRef,
+                    now,
+                    "fixed_order_sessions");
+                result = new OrderRewardPointWriteResult(trimmedOrderId, 0, false);
+                return;
+            }
+
+            if (!IsRewardEligibleCompletedOrder(orderSnapshot))
+            {
+                MarkRewardPointsSkipped(
+                    transaction,
+                    orderRef,
+                    now,
+                    "ineligible_completed_order");
+                result = new OrderRewardPointWriteResult(trimmedOrderId, 0, false);
                 return;
             }
 
@@ -174,7 +196,6 @@ public sealed class OrderRepository : IOrderRepository
 
             var userRef = _firestoreDb.Collection("users").Document(userId);
             var userSnapshot = await transaction.GetSnapshotAsync(userRef, cancellationToken);
-            var now = Timestamp.FromDateTime(DateTime.UtcNow);
             if (!userSnapshot.Exists || string.IsNullOrWhiteSpace(GetString(userSnapshot, "email")))
             {
                 transaction.Update(orderRef, new Dictionary<string, object>
@@ -224,6 +245,48 @@ public sealed class OrderRepository : IOrderRepository
         return result;
     }
 
+    public async Task<IReadOnlyList<string>> GetCompletedOrderIdsPendingRewardPointsAsync(
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (pageSize <= 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        var pendingSnapshot = await _firestoreDb
+            .Collection("orders")
+            .WhereEqualTo("status", OrderStatuses.Completed)
+            .WhereEqualTo("rewardPointsGranted", false)
+            .Limit(pageSize)
+            .GetSnapshotAsync(cancellationToken);
+
+        var orderIds = pendingSnapshot.Documents
+            .Where(document => document.Exists)
+            .Select(document => document.Reference.Id)
+            .ToList();
+        if (orderIds.Count >= pageSize)
+        {
+            return orderIds;
+        }
+
+        var recentCompletedSnapshot = await _firestoreDb
+            .Collection("orders")
+            .WhereEqualTo("status", OrderStatuses.Completed)
+            .OrderByDescending("updatedAt")
+            .Limit(pageSize * 3)
+            .GetSnapshotAsync(cancellationToken);
+
+        orderIds.AddRange(recentCompletedSnapshot.Documents
+            .Where(document => document.Exists && !GetBool(document, "rewardPointsGranted"))
+            .Select(document => document.Reference.Id));
+
+        return orderIds
+            .Distinct(StringComparer.Ordinal)
+            .Take(pageSize)
+            .ToArray();
+    }
+
     private static double CalculateRewardEligiblePaidAmount(DocumentSnapshot orderSnapshot)
     {
         var paidAmount = NormalizeMoney(GetDouble(orderSnapshot, "paidAmount"));
@@ -264,6 +327,29 @@ public sealed class OrderRepository : IOrderRepository
         }
 
         return CalculateRewardEligiblePaidAmount(orderSnapshot) > 0;
+    }
+
+    private static bool IsFixedOrder(IEnumerable<DocumentSnapshot> bookingSnapshots)
+    {
+        return bookingSnapshots.Any(snapshot =>
+            snapshot.Exists &&
+            string.Equals(GetString(snapshot, "bookingType"), BookingTypes.Fixed, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void MarkRewardPointsSkipped(
+        Transaction transaction,
+        DocumentReference orderRef,
+        Timestamp now,
+        string reason)
+    {
+        transaction.Update(orderRef, new Dictionary<string, object>
+        {
+            ["rewardPoints"] = 0,
+            ["rewardPointsGranted"] = true,
+            ["rewardPointsSkippedReason"] = reason,
+            ["rewardPointsGrantedAt"] = now,
+            ["updatedAt"] = now,
+        });
     }
 
     public async Task<OrderPaymentWriteResult> ProcessPaidWebhookAsync(

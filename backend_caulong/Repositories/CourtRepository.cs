@@ -20,7 +20,7 @@ public sealed class CourtRepository : ICourtRepository
         CancellationToken cancellationToken = default)
     {
         var limit = NormalizeLimit(request.Limit, DefaultSearchLimit, MaxSearchLimit);
-        var canSeeProtectedCourts = await UserHasAnyPaidOrderAsync(
+        var canSeeProtectedCourts = await UserHasAnyTrustedOrderAsync(
             request.UserId,
             cancellationToken);
         var normalizedSearchText = NormalizeSearchText(request.SearchText);
@@ -57,7 +57,7 @@ public sealed class CourtRepository : ICourtRepository
         return new CourtDetailResult(ToApiDictionary(courtSnapshot));
     }
 
-    private async Task<bool> UserHasAnyPaidOrderAsync(
+    private async Task<bool> UserHasAnyTrustedOrderAsync(
         string? userId,
         CancellationToken cancellationToken)
     {

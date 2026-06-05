@@ -4,11 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx real2.ts & vite",
+    "dev": "node scripts/dev.mjs",
+    "dev:api": "tsx real2.ts",
+    "dev:web": "vite",
     "build": "vite build && esbuild real2.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/real2.cjs",
     "start": "node dist/real2.cjs",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.cjs",
+    "clean": "node -e \"const fs=require('fs'); fs.rmSync('dist',{recursive:true,force:true}); fs.rmSync('server.cjs',{force:true});\"",
     "lint": "tsc --noEmit"
   },
   "dependencies": {

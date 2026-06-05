@@ -5,7 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
-import '../../../constants/app_colors.dart';
+import '../../../commons/styles/app_colors.dart';
 
 class ChangePasswordScreen extends StatefulWidget {
   const ChangePasswordScreen({super.key});
@@ -39,9 +39,17 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       return;
     }
     int strength = 0;
-    if (password.length >= 8) strength++;
-    if (RegExp(r'[A-Z]').hasMatch(password) && RegExp(r'[a-z]').hasMatch(password)) strength++;
-    if (RegExp(r'[0-9]').hasMatch(password) && RegExp(r'[!@#\$%^&*]').hasMatch(password)) strength++;
+    if (password.length >= 8) {
+      strength++;
+    }
+    if (RegExp(r'[A-Z]').hasMatch(password) &&
+        RegExp(r'[a-z]').hasMatch(password)) {
+      strength++;
+    }
+    if (RegExp(r'[0-9]').hasMatch(password) &&
+        RegExp(r'[!@#\$%^&*]').hasMatch(password)) {
+      strength++;
+    }
     setState(() => _passwordStrength = strength);
   }
 
@@ -69,12 +77,20 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
               color: const Color(0xFFF0FAF9),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(Icons.arrow_back_ios_new_rounded, color: AppColors.primary, size: 16),
+            child: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: AppColors.primary,
+              size: 16,
+            ),
           ),
         ),
         title: const Text(
           'Thay đổi mật khẩu',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.black),
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: AppColors.black,
+          ),
         ),
         centerTitle: true,
       ),
@@ -107,14 +123,18 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.primary.withOpacity(0.08),
+        color: AppColors.primary.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.info_outline_rounded, color: AppColors.primary, size: 20),
+          const Icon(
+            Icons.info_outline_rounded,
+            color: AppColors.primary,
+            size: 20,
+          ),
           const SizedBox(width: 12),
           const Expanded(
             child: Text(
@@ -140,7 +160,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 12,
             offset: const Offset(0, 3),
           ),
@@ -222,11 +242,16 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
           hintText: hint,
           hintStyle: const TextStyle(color: AppColors.grey, fontSize: 13),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
           suffixIcon: GestureDetector(
             onTap: onToggle,
             child: Icon(
-              showPassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+              showPassword
+                  ? Icons.visibility_outlined
+                  : Icons.visibility_off_outlined,
               color: AppColors.grey,
               size: 20,
             ),
@@ -298,7 +323,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
           elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
         ),
         child: const Text(
           'Cập nhật mật khẩu',

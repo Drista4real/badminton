@@ -55,6 +55,7 @@ const Map<String, String> viVn = {
   'history.tab.booked': 'Đã đặt',
   'history.tab.completed': 'Đã kết thúc',
   'history.tab.cancelled': 'Đã hủy',
+  'history.tab.contracts': 'Hợp đồng',
   'paymentSuccess.title': 'Đặt sân thành công!',
   'paymentSuccess.bookingCode': 'Mã đặt chỗ: #@code',
   'paymentSuccess.date': 'Ngày',

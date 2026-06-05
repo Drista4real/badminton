@@ -146,10 +146,10 @@ dotnet restore
 dotnet run
 ```
 
-Backend sẽ chạy tại: **http://localhost:5000** (hoặc port khác nếu config)
+Backend sẽ chạy tại: **http://localhost:5011** (hoặc port khác nếu config)
 
 **Kiểm tra API Documentation (Swagger):**
-- Mở: http://localhost:5000/swagger
+- Mở: http://localhost:5011/swagger
 
 ---
 
@@ -211,7 +211,8 @@ Tệp: `badminton_app_and_web/lib/constants/app_constants.dart`
 Cập nhật:
 ```dart
 class ApiConstants {
-  static const String baseUrl = 'http://localhost:5000'; // Phát triển
+  static const String baseUrl = 'http://localhost:5011'; // Web/iOS simulator/desktop
+  // Android emulator dùng: http://10.0.2.2:5011
   // hoặc
   static const String baseUrl = 'https://your-api-domain.com'; // Production
 }
@@ -251,7 +252,7 @@ Thêm vào **Firebase Console** → **Project Settings** → **Android** → **S
 ### Backend:
 - [ ] `dotnet restore` thành công
 - [ ] `dotnet run` chạy mà không lỗi
-- [ ] Swagger UI có sẵn tại `http://localhost:5000/swagger`
+- [ ] Swagger UI có sẵn tại `http://localhost:5011/swagger`
 - [ ] Có thể gọi API từ Frontend
 
 ### Firestore:
