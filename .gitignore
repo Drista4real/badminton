@@ -103,3 +103,4 @@ build*.txt
 *.bak
 *.log
 *.txt
+.idea/
