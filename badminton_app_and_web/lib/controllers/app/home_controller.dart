@@ -79,6 +79,15 @@ class HomeController extends GetxController {
     }
   }
 
+  String? get avatarUrl {
+    final profileAvatar = user.value?.avatarUrl?.trim();
+    if (profileAvatar != null && profileAvatar.isNotEmpty) {
+      return profileAvatar;
+    }
+    final firebaseAvatar = _authRepository.currentUser?.photoURL?.trim();
+    return firebaseAvatar?.isNotEmpty == true ? firebaseAvatar : null;
+  }
+
   String get greetingName {
     final profileName = user.value?.fullName.trim();
     if (profileName != null && profileName.isNotEmpty) {

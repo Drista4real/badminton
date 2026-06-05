@@ -14,7 +14,7 @@ class ApiClient {
   String get baseUrl {
     const configured = String.fromEnvironment('API_BASE_URL');
     if (configured.isNotEmpty) return configured;
-    return kIsWeb ? 'http://localhost:5011' : 'http://10.0.2.2:5011';
+    return kIsWeb ? 'http://localhost:5011' : 'http://localhost:5000';
   }
 
   Future<http.Response> postJson(

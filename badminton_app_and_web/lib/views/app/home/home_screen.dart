@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -68,18 +70,25 @@ class HomeScreen extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       child: Row(
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [AppColors.primary, AppColors.secondary],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+          GestureDetector(
+            onTap: () => Get.toNamed(AppRoutes.profile),
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: [AppColors.primary, AppColors.secondary],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: ClipOval(
+                child: controller == null
+                    ? const Icon(Icons.person, color: Colors.white, size: 24)
+                    : Obx(() => _buildAvatarWidget(controller.avatarUrl)),
               ),
             ),
-            child: const Icon(Icons.person, color: Colors.white, size: 24),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -655,6 +664,39 @@ class HomeScreen extends StatelessWidget {
     final day = now.day.toString().padLeft(2, '0');
     final month = now.month.toString().padLeft(2, '0');
     return '${weekdays[now.weekday - 1]}, $day/$month/${now.year}';
+  }
+
+  Widget _buildAvatarWidget(String? avatarUrl) {
+    if (avatarUrl == null) {
+      return const Icon(Icons.person, color: Colors.white, size: 24);
+    }
+
+    if (avatarUrl.startsWith('data:image/')) {
+      final commaIndex = avatarUrl.indexOf(',');
+      if (commaIndex > 0) {
+        try {
+          return Image.memory(
+            base64Decode(avatarUrl.substring(commaIndex + 1)),
+            fit: BoxFit.cover,
+            width: 44,
+            height: 44,
+            errorBuilder: (_, __, ___) =>
+                const Icon(Icons.person, color: Colors.white, size: 24),
+          );
+        } catch (_) {
+          return const Icon(Icons.person, color: Colors.white, size: 24);
+        }
+      }
+    }
+
+    return Image.network(
+      avatarUrl,
+      fit: BoxFit.cover,
+      width: 44,
+      height: 44,
+      errorBuilder: (_, __, ___) =>
+          const Icon(Icons.person, color: Colors.white, size: 24),
+    );
   }
 }
 

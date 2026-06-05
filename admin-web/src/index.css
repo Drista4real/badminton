@@ -1,0 +1,38 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;850;900&family=JetBrains+Mono:wght@300;400;500;650;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Custom Main Sage Gray Color (#BDC9C8) and cohesive shades */
+  --color-indigo-50: #f2f5f4;
+  --color-indigo-100: #e2e8e7;
+  --color-indigo-200: #cbd6d4;
+  --color-indigo-300: #bdc9c8;
+  --color-indigo-400: #a0b2b0;
+  --color-indigo-500: #7d9391;
+  --color-indigo-600: #5d7371;
+  --color-indigo-700: #4c5d5c;
+  --color-indigo-800: #3f4e4d;
+  --color-indigo-900: #354241;
+  --color-indigo-950: #1b2221;
+}
+
+/* Custom scrollbar configurations for Pos Grid */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 12px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 6px;
+  border: 2px solid #f1f5f9;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
