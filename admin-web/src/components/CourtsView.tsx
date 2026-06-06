@@ -80,7 +80,7 @@ export default function CourtsView({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Quản lý sân bãi</h1>
-          <p className="text-sm text-gray-500">Xem danh mục sân chơi, chỉnh sửa biểu giá và thiết lập chế độ bảo dưỡng.</p>
+          <p className="text-sm text-gray-500">Xem danh mục sân chơi và thiết lập chế độ bảo dưỡng.</p>
         </div>
 
         <button
@@ -125,9 +125,6 @@ export default function CourtsView({
             <div className="p-4 space-y-3.5 flex-1 flex flex-col justify-between">
               <div>
                 <h3 className="font-bold text-gray-900 text-sm">{court.name}</h3>
-                <div className="text-indigo-600 font-extrabold font-mono text-sm mt-1">
-                  {court.pricePerHour.toLocaleString('vi-VN')} VNĐ <span className="text-[10px] text-gray-400 font-normal">/ giờ chơi</span>
-                </div>
               </div>
 
               {/* Action utilities and soft delete toggle */}
@@ -223,19 +220,6 @@ export default function CourtsView({
                   <option value="Sàn Gỗ">Sàn Gỗ chống trượt</option>
                   <option value="Bê tông">Bê tông ngoài trời</option>
                 </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-gray-400 uppercase">Giá thuê mỗi giờ (VNĐ)</label>
-                <input
-                  type="number"
-                  required
-                  min={10000}
-                  step={5000}
-                  className="w-full text-xs text-gray-800 border border-gray-200 rounded-xl px-4 py-2.5 outline-hidden focus:border-indigo-500 font-mono font-bold"
-                  value={price}
-                  onChange={(e) => setPrice(parseInt(e.target.value) || 0)}
-                />
               </div>
 
               <div className="space-y-1">

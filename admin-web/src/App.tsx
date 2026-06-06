@@ -96,7 +96,6 @@ export default function App() {
           name: u.fullName || u.displayName || u.name || 'Unnamed',
           email: u.email || '',
           phone: u.phone || u.phoneNumber || '',
-          role: u.role || 'customer',
           points: u.rankScore !== undefined ? u.rankScore : (u.points || 0),
           isLocked: u.isLocked === true || u.isLocked === 'true' || u.isDisabled === true || u.isDisabled === 'true',
           joinedDate: u.createdAt?._seconds ? getLocalDateString(u.createdAt._seconds * 1000) : getLocalDateString()
@@ -174,8 +173,7 @@ export default function App() {
             'confirmed': 'Confirmed',
             'completed': 'Completed',
             'cancelled': 'Cancelled',
-            'no-show': 'No-show',
-            'no_show': 'No-show'
+            'no-show': 'No-show'
           };
 
           const matchedUser = firestoreUsers.find(u => u.id === b.userId);
@@ -204,24 +202,24 @@ export default function App() {
         setBookings(mappedBookings);
       }
 
-      const refundsRes = await fetch('/api/data-refunds');
-      if (refundsRes.ok) {
-        const firestoreRefunds = await refundsRes.json();
-        const mappedRefunds: RefundRequest[] = firestoreRefunds.map((w: any) => ({
+      const walletRes = await fetch('/api/data-wallet');
+      if (walletRes.ok) {
+        const firestoreWallet = await walletRes.json();
+        const mappedRefunds: RefundRequest[] = firestoreWallet.map((w: any) => ({
           id: w.id,
-          bookingId: w.bookingId || w.orderId || 'N/A',
-          customerName: w.customerName || 'User',
+          bookingId: w.sourceOrderId || 'N/A',
+          customerName: w.userId || 'User',
           bankName: w.bankName || 'Ví Nội Bộ',
-          accountNumber: w.accountNumber || 'N/A',
-          accountHolder: w.accountHolder || 'N/A',
+          accountNumber: w.bankAccountNumber || 'N/A',
+          accountHolder: w.bankAccountName || 'N/A',
           amount: w.amount || 0,
-          status: w.status === 'Cancelled' ? 'Cancelled' : 'Refund_Pending',
+          status: (w.status || '').toLowerCase() === 'pending' ? 'Refund_Pending' : 'Cancelled',
           courtName: 'Chi tiết ngân sách',
-          timeSlot: w.timeSlot || '-',
-          date: w.date || getLocalDateString(),
-          ...w
+          timeSlot: '-',
+          date: w.createdAt?._seconds ? getLocalDateString(w.createdAt._seconds * 1000) : getLocalDateString()
         }));
-        setRefunds(mappedRefunds);
+        // Filter out items that might not be refunds if needed, but for now map everything 
+        if (mappedRefunds.length > 0) setRefunds(mappedRefunds);
       }
       
       const priceRes = await fetch('/api/data-pricing');
@@ -282,11 +280,41 @@ export default function App() {
     // Optimistic UI
     setBookings(prev => [newBooking, ...prev]);
 
+    // Add points for App customers
+    let earnedPoints = 0;
+    if (newBooking.customerType === 'App' && (newBooking.status === 'Completed' || newBooking.status === 'Confirmed')) {
+      const matchedCustomer = customers.find(c => {
+        if (newBooking.customerId && c.id === newBooking.customerId) {
+          return true;
+        }
+        // Fallback name matching, but ensure we don't match blindly if phone is empty or generic
+        const nameMatch = c.name === newBooking.customerName;
+        const phoneMatch = newBooking.customerPhone && newBooking.customerPhone.trim() !== '' && newBooking.customerPhone !== '0934567XXX' && c.phone === newBooking.customerPhone;
+        return nameMatch || phoneMatch;
+      });
+      if (matchedCustomer) {
+        earnedPoints = Math.floor(newBooking.totalAmount / 10000);
+        setCustomers(prev => prev.map(c => {
+          if (c.id === matchedCustomer.id) return { ...c, points: (c.points || 0) + earnedPoints };
+          return c;
+        }));
+        
+        // update customer points in DB
+        try {
+          await fetch(`/api/data-users/${matchedCustomer.id}/points`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pointsToAdd: earnedPoints })
+          });
+        } catch(e) { console.error('Failed to update points', e); }
+      }
+    }
+
     try {
       const res = await fetch('/api/data-bookings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newBooking)
+        body: JSON.stringify({...newBooking, pointsEarned: earnedPoints})
       });
       if (!res.ok) {
         console.error('Failed to create booking in DB');
@@ -350,7 +378,6 @@ export default function App() {
             name: u.fullName || u.displayName || u.name || 'Unnamed',
             email: u.email || '',
             phone: u.phone || u.phoneNumber || '',
-            role: u.role || 'customer',
             points: u.rankScore !== undefined ? u.rankScore : (u.points || 0),
             isLocked: u.isLocked === true || u.isLocked === 'true' || u.isDisabled === true || u.isDisabled === 'true',
             joinedDate: u.createdAt?._seconds ? new Date(u.createdAt._seconds * 1000).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
@@ -519,23 +546,34 @@ export default function App() {
     if (!refund) return;
 
     try {
-      const refundRes = await fetch(`/api/data-refunds/${refundId}/complete`, {
+      // First update the wallet transaction which will check balance
+      const walletRes = await fetch(`/api/data-wallet/${refundId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'completed' })
       });
 
-      if (!refundRes.ok) {
-        const errorData = await refundRes.json().catch(() => ({}));
+      if (!walletRes.ok) {
+        const errorData = await walletRes.json().catch(() => ({}));
         alert(errorData.error || 'Server error occurred during refund processing');
         return;
       }
 
+      // If successful, update local states
       setRefunds(prev => prev.map(r => r.id === refundId ? { ...r, status: 'Cancelled' } : r));
       setBookings(prev => prev.map(b => b.id === refund.bookingId ? { ...b, status: 'Cancelled' } : b));
 
       // Display success message
       alert(`Xác nhận hoàn tiền thành công!\nYêu cầu ${refund.id} trị giá ${refund.amount.toLocaleString('vi-VN')}đ đã được chuyển khoản thủ công.`);
 
+      // Update the corresponding booking state in backend
+      if (refund.bookingId && refund.bookingId !== 'N/A') {
+        await fetch(`/api/data-bookings/${refund.bookingId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'Cancelled' })
+        });
+      }
     } catch(err) {
       console.error(err);
       alert('Network error while processing refund');

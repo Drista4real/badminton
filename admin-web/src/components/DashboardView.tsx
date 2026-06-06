@@ -27,7 +27,8 @@ export default function DashboardView({ selectedDateISO, bookings, courts, custo
   const totalBookingsCount = bookings.length;
 
   // Parse time "HH:mm" to minutes
-  const timeToMinutes = (time: string) => {
+  const timeToMinutes = (time?: string) => {
+    if (!time) return 0;
     const [h, m] = time.split(':').map(Number);
     return (h || 0) * 60 + (m || 0);
   };
@@ -36,11 +37,19 @@ export default function DashboardView({ selectedDateISO, bookings, courts, custo
   // Assume operating hours from 05:00 to 24:00 (19 hours = 1140 minutes per active court)
   const totalOperatingMinutes = activeCourtsCount * 19 * 60; 
   const totalBookedMinutes = confirmedAndCompletedToday.reduce((sum, b) => {
-    return sum + (timeToMinutes(b.endTime) - timeToMinutes(b.startTime));
+    let duration = timeToMinutes(b.endTime) - timeToMinutes(b.startTime);
+    // Handle overnight bookings or when endTime is "00:00" or next day
+    if (duration <= -12 * 60) {
+      // e.g. start at 23:00, end at 01:00 -> duration = -1320 + 1440 = 120
+      duration += 24 * 60; 
+    }
+    // Prevent negative duration anomalies from flawed data entry
+    if (duration < 0) duration = 0;
+    return sum + duration;
   }, 0);
   
   const occupancyPercentage = totalOperatingMinutes > 0 
-    ? Math.round((totalBookedMinutes / totalOperatingMinutes) * 100) 
+    ? Math.max(0, Math.round((totalBookedMinutes / totalOperatingMinutes) * 100)) 
     : 0;
 
   const occupancyRate = `${occupancyPercentage}%`;

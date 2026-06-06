@@ -70,7 +70,6 @@ export interface Customer {
   name: string;
   email: string;
   phone: string;
-  role?: string;
   points: number;
   isLocked: boolean;
   joinedDate: string;

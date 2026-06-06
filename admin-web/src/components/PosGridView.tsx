@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Calendar, Check, X, ShieldAlert, Award, User, Phone, FileText, 
   Coins, CreditCard, ChevronLeft, ChevronRight, CheckCircle2, RefreshCw, AlertTriangle,
@@ -61,6 +61,11 @@ export default function PosGridView({
   const [walkinName, setWalkinName] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'vietqr' | null>(null);
   const [qrTimer, setQrTimer] = useState(600); // 10 minutes count down
+  
+  // Real QR and polling state
+  const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
+  const [bookingRefId, setBookingRefId] = useState<string>('');
+  const [pollingAmount, setPollingAmount] = useState<number>(0);
 
   // QR Timer Countdown effect
   useEffect(() => {
@@ -74,6 +79,31 @@ export default function PosGridView({
     }
     return () => clearInterval(interval);
   }, [showBookingModal, bookingStep, paymentMethod, qrTimer]);
+
+  // SePay Polling effect
+  useEffect(() => {
+    let pollingInterval: any = null;
+    if (showBookingModal && bookingStep === 2 && paymentMethod === 'vietqr' && bookingRefId) {
+      pollingInterval = setInterval(async () => {
+        try {
+          // Send amount for fallback matching in case exact string match fails due to bank notes modifications
+          const amountQuery = `amount=${pollingAmount}`;
+          const res = await fetch(`/api/payment-status/${bookingRefId}?${amountQuery}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.paid) {
+              clearInterval(pollingInterval);
+              handleConfirmBooking();
+              alert(`Xác nhận thanh toán tự động qua SePay thành công! Đã lên lịch tự động.`);
+            }
+          }
+        } catch (e) {
+          console.error("Lỗi polling SePay", e);
+        }
+      }, 3000);
+    }
+    return () => clearInterval(pollingInterval);
+  }, [showBookingModal, bookingStep, paymentMethod, bookingRefId]);
 
   // Drag-and-drop mouse select handlers
   const handleMouseDown = (courtId: string, time: string, isPast: boolean, hasBooking: boolean) => {
@@ -367,65 +397,12 @@ export default function PosGridView({
     return parts[0].slice(0, 2) + '***@' + parts[1];
   };
 
-  const normalizePhoneSearch = (value?: string) => {
-    let digits = (value || '').replace(/\D/g, '');
-    if (digits.startsWith('0084')) {
-      digits = `0${digits.slice(4)}`;
-    } else if (digits.startsWith('84') && digits.length === 11) {
-      digits = `0${digits.slice(2)}`;
-    }
-    return digits;
-  };
-
-  const appCustomers = useMemo(() => {
-    const internalRoles = new Set(['admin', 'staff', 'accountant']);
-    return customers.filter((customer) => {
-      const role = (customer.role || 'customer').toLowerCase();
-      if (internalRoles.has(role)) return false;
-      if (customer.isLocked) return false;
-      return Boolean((customer.email || '').trim() || (customer.phone || '').trim());
-    });
-  }, [customers]);
-
-  const filteredCustomers = useMemo(() => {
-    const query = searchCustQuery.trim();
-    if (!query) return [];
-
-    const normalizedQuery = query.toLowerCase();
-    const normalizedPhoneQuery = normalizePhoneSearch(query);
-
-    return appCustomers
-      .map((customer) => {
-        const name = (customer.name || '').toLowerCase();
-        const email = (customer.email || '').toLowerCase();
-        const phone = normalizePhoneSearch(customer.phone);
-
-        let score = Number.POSITIVE_INFINITY;
-        if (email === normalizedQuery || (normalizedPhoneQuery && phone === normalizedPhoneQuery)) {
-          score = 0;
-        } else if (
-          email.startsWith(normalizedQuery) ||
-          (normalizedPhoneQuery && phone.startsWith(normalizedPhoneQuery))
-        ) {
-          score = 1;
-        } else if (
-          email.includes(normalizedQuery) ||
-          (normalizedPhoneQuery && phone.includes(normalizedPhoneQuery))
-        ) {
-          score = 2;
-        } else if (name.startsWith(normalizedQuery)) {
-          score = 3;
-        } else if (name.includes(normalizedQuery)) {
-          score = 4;
-        }
-
-        return { customer, score };
-      })
-      .filter((item) => Number.isFinite(item.score))
-      .sort((a, b) => a.score - b.score || a.customer.name.localeCompare(b.customer.name, 'vi'))
-      .slice(0, 8)
-      .map((item) => item.customer);
-  }, [appCustomers, searchCustQuery]);
+  // Filtered customer autocomplete
+  const filteredCustomers = customers.filter(c => 
+    c.name.toLowerCase().includes(searchCustQuery.toLowerCase()) || 
+    c.phone.includes(searchCustQuery) ||
+    c.email.toLowerCase().includes(searchCustQuery.toLowerCase())
+  );
 
   return (
     <div className="space-y-6">
@@ -856,10 +833,7 @@ export default function PosGridView({
                           placeholder="Nhập số điện thoại hoặc tên..."
                           className="w-full text-xs text-slate-800 bg-white border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 outline-hidden focus:border-[#005C53] transition-all font-medium h-[41px]"
                           value={searchCustQuery}
-                          onChange={(e) => {
-                            setSearchCustQuery(e.target.value);
-                            setSelectedCustomer(null);
-                          }}
+                          onChange={(e) => setSearchCustQuery(e.target.value)}
                         />
                       </div>
 
@@ -869,7 +843,7 @@ export default function PosGridView({
                           {filteredCustomers.length === 0 ? (
                             <p className="p-3 text-[11px] text-center text-slate-400">Không tìm thấy khách hàng nào</p>
                           ) : (
-                            filteredCustomers.map((c) => (
+                            filteredCustomers.slice(0, 4).map((c) => (
                               <div
                                 key={c.id}
                                 onClick={() => { setSelectedCustomer(c); setSearchCustQuery(c.name); }}
@@ -924,9 +898,10 @@ export default function PosGridView({
                           Sân
                         </label>
                         <select
+                          disabled
                           value={modalCourtId}
                           onChange={(e) => setModalCourtId(e.target.value)}
-                          className="w-full text-xs text-slate-800 bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 outline-hidden focus:border-[#005C53] transition-all font-bold cursor-pointer h-[41px]"
+                          className="w-full text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 outline-hidden opacity-80 cursor-not-allowed font-bold h-[41px]"
                         >
                           {courts.filter(c => c.isActive).map(c => (
                             <option key={c.id} value={c.id}>
@@ -943,9 +918,10 @@ export default function PosGridView({
                         </label>
                         <input
                           type="date"
+                          disabled
                           value={modalDate}
                           onChange={(e) => setModalDate(e.target.value)}
-                          className="w-full text-xs text-slate-850 bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 outline-hidden focus:border-[#005C53] transition-all font-bold font-mono cursor-pointer h-[41px]"
+                          className="w-full text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 outline-hidden opacity-80 font-bold font-mono cursor-not-allowed h-[41px]"
                         />
                       </div>
 
@@ -955,9 +931,10 @@ export default function PosGridView({
                           Giờ bắt đầu
                         </label>
                         <select
+                          disabled
                           value={modalStartTime}
                           onChange={(e) => setModalStartTime(e.target.value)}
-                          className="w-full text-xs text-slate-850 bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 outline-hidden focus:border-[#005C53] transition-all font-bold font-mono cursor-pointer h-[41px]"
+                          className="w-full text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 outline-hidden opacity-80 font-bold font-mono cursor-not-allowed h-[41px]"
                         >
                           {TIME_SLOTS.map(t => (
                             <option key={t} value={t}>{t}</option>
@@ -970,21 +947,21 @@ export default function PosGridView({
                         <label className="text-[11px] font-bold text-slate-500 block">
                           Thời lượng
                         </label>
-                        <div className="flex items-center justify-between border border-slate-200 bg-white rounded-xl px-2.5 py-1.5 h-[41px]">
+                        <div className="flex items-center justify-between border border-slate-200 bg-slate-50 opacity-80 rounded-xl px-2.5 py-1.5 h-[41px] cursor-not-allowed">
                           <button
                             type="button"
-                            onClick={() => setModalDuration(p => Math.max(0.5, p - 0.5))}
-                            className="w-7 h-7 rounded-full border border-slate-200 hover:bg-slate-50 flex items-center justify-center text-slate-500 hover:text-slate-700 transition-colors cursor-pointer select-none font-bold"
+                            disabled
+                            className="w-7 h-7 rounded-full border border-slate-200 bg-slate-100 flex items-center justify-center text-slate-400 cursor-not-allowed select-none font-bold"
                           >
                             <Minus size={11} />
                           </button>
-                          <span className="text-xs font-bold text-slate-800 font-sans mx-2 select-none shrink-0">
+                          <span className="text-xs font-bold text-slate-500 font-sans mx-2 select-none shrink-0">
                             {modalDuration} giờ
                           </span>
                           <button
                             type="button"
-                            onClick={() => setModalDuration(p => Math.min(5.0, p + 0.5))}
-                            className="w-7 h-7 rounded-full border border-slate-200 hover:bg-slate-50 flex items-center justify-center text-slate-500 hover:text-slate-700 transition-colors cursor-pointer select-none font-bold"
+                            disabled
+                            className="w-7 h-7 rounded-full border border-slate-200 bg-slate-100 flex items-center justify-center text-slate-400 cursor-not-allowed select-none font-bold"
                           >
                             <Plus size={11} />
                           </button>
@@ -1060,15 +1037,34 @@ export default function PosGridView({
                     <button
                       type="button"
                       disabled={customerType === 'App' && !selectedCustomer || customerType === 'Walkin' && !walkinName}
-                      onClick={() => {
+                      onClick={async () => {
                         setPaymentMethod('vietqr');
                         setQrTimer(600);
                         setBookingStep(2);
+                        setQrImageUrl(null);
+                        setPollingAmount(totalBookingAmount);
+                        
+                        const generatedRef = `DATSAN${modalStartTime ? modalStartTime.replace(':', '') : 'MULTI'}${Date.now().toString(36).slice(-4)}`.toUpperCase();
+                        setBookingRefId(generatedRef);
+                        
+                        try {
+                          const res = await fetch("/api/generate-qr", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ amount: totalBookingAmount, bookingRef: generatedRef })
+                          });
+                          const data = await res.json();
+                          if (data.qrDataURL) {
+                             setQrImageUrl(data.qrDataURL);
+                          }
+                        } catch (e) {
+                           console.error("Lỗi tạo mã VietQR", e);
+                        }
                       }}
                       className="flex-1 bg-[#005C53] hover:bg-[#00473F] text-white font-bold text-xs py-3 px-4 rounded-full flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-[#005C53]/15 transition-all disabled:opacity-30 disabled:cursor-not-allowed h-[45px]"
                     >
                       <CreditCard size={15} />
-                      Xác nhận & In QR
+                      Xác nhận thanh toán
                     </button>
                   </div>
 
@@ -1085,32 +1081,28 @@ export default function PosGridView({
                       Cổng QR VietQR thanh toán nhanh
                     </p>
                     
-                    {/* Dynamic QR mockup */}
-                    <div className="bg-white p-3.5 border border-slate-150 rounded-2xl max-w-[180px] mx-auto shadow-xs select-none">
-                      <div className="aspect-square bg-slate-900 rounded-lg flex flex-col items-center justify-center text-white relative p-1.5">
-                        <div className="grid grid-cols-5 gap-1.5 w-full h-full p-2.5 opacity-90 bg-slate-900">
-                          {Array.from({ length: 25 }).map((_, i) => (
-                            <div key={i} className={`rounded-[3px] ${
-                              (i % 3 === 0 || i % 7 === 0 || i < 5 || i % 5 === 0) ? 'bg-white' : 'bg-slate-800'
-                            }`} />
-                          ))}
+                    {/* Dynamic Real QR Display */}
+                    <div className="bg-white p-3.5 border border-slate-150 rounded-2xl max-w-[180px] mx-auto shadow-xs select-none relative min-h-[160px] flex items-center justify-center overflow-hidden">
+                      {qrImageUrl ? (
+                        <img src={qrImageUrl} alt="VietQR" className="w-full h-full object-contain mix-blend-multiply" />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center gap-2 text-slate-400">
+                           <RefreshCw size={24} className="animate-spin text-slate-300" />
+                           <span className="text-[10px] font-bold">Đang khởi tạo mã QR...</span>
                         </div>
-                        <div className="absolute inset-x-0 bottom-2 bg-[#005C53] text-[8px] tracking-wider font-extrabold uppercase py-0.5 text-center px-1 rounded-sm mx-2">
-                          PROBAD {Math.floor(1000 + Math.random() * 9000)}
-                        </div>
-                      </div>
+                      )}
                     </div>
 
-                    {/* MB Bank transfer accounts */}
+                    {/* VietinBank transfer accounts */}
                     <div className="text-xs font-semibold text-slate-700 space-y-1.5">
-                      <p>Hệ thống: <b className="text-slate-900 font-bold">MB Bank (Ngân Hàng Quân Đội)</b></p>
-                      <p>Số tài khoản: <b className="text-slate-900 font-mono font-bold">1133557799</b></p>
-                      <p>Chủ tài khoản: <b className="text-slate-900 font-bold uppercase">PRO BADMINTON CAU GIAY</b></p>
+                      <p>Hệ thống: <b className="text-slate-900 font-bold">VietinBank</b></p>
+                      <p>Số tài khoản: <b className="text-slate-900 font-mono font-bold">104879645387</b></p>
+                      <p>Chủ tài khoản: <b className="text-slate-900 font-bold uppercase">NGUYEN DUC VINH</b></p>
                       <p className="text-sm border-t border-slate-100 pt-2 text-[#005C53] font-extrabold">
                         Phải thanh toán: <b>{totalBookingAmount.toLocaleString('vi-VN')} VNĐ</b>
                       </p>
                       <div className="bg-amber-50/60 text-amber-800 border border-amber-100/40 px-3 py-1.5 rounded-lg inline-block text-center mt-1">
-                        Nội dung quét dán: <b className="font-mono text-sm uppercase text-slate-850 font-black">DATSAN {modalStartTime ? modalStartTime.replace(':', '') : 'MULTI'}</b>
+                        Nội dung chuyển khoản (bắt buộc): <b className="font-mono text-[13px] uppercase text-slate-850 font-black">SEVQR {bookingRefId || '...'}</b>
                       </div>
                     </div>
 
@@ -1126,10 +1118,10 @@ export default function PosGridView({
                       <button
                         type="button"
                         onClick={handleConfirmBooking}
-                        className="bg-[#005C53] hover:bg-[#00473F] text-white font-extrabold text-[10px] px-4 py-2.5 rounded-xl flex items-center justify-center gap-2.5 cursor-pointer shadow-md active:scale-95 transition-all mt-1 uppercase tracking-wide tracking-wider"
+                        className="mt-2 text-[10px] text-slate-400 border border-slate-200 hover:bg-slate-50 hover:text-slate-600 px-3 py-1.5 rounded-lg active:scale-95 transition-all font-semibold flex items-center justify-center gap-1.5"
                       >
-                        <RefreshCw size={11} className="animate-spin" />
-                        Giả lập quét QR (Webhook thành công)
+                        <RefreshCw size={10} />
+                        Xác nhận thủ công (Bỏ qua chờ Webhook)
                       </button>
                     </div>
                   </div>

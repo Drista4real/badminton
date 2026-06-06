@@ -34,8 +34,6 @@ try {
 }
 
 const db = admin.firestore?.();
-const allowDevAuthFallback = process.env.ADMIN_AUTH_FALLBACK_ENABLED === "true"
-  && process.env.NODE_ENV !== "production";
 
 // --- RESILIENT SERVER IN-MEMORY CACHE & SEED FALLBACK FOR FIRESTORE QUOTA RESILIENCY ---
 let cacheUsers: any[] = [
@@ -331,8 +329,6 @@ let cacheWallet: any[] = [
   }
 ];
 
-let cacheRefunds: any[] = [];
-
 // Helper to synchronise on boot with Firestore if possible
 async function syncOnBoot() {
   if (!db) return;
@@ -530,10 +526,10 @@ async function startServer() {
         }
       }
 
-      // Optional local fallback for demo/dev only.
-      const match = allowDevAuthFallback ? cacheUsers.find(
+      // 2. Check within in-memory cache users
+      const match = cacheUsers.find(
         u => (u.email && u.email.toLowerCase() === cleanUsername) || (u.phone === cleanUsername) || (u.phoneNumber === cleanUsername)
-      ) : null;
+      );
       if (match && match.password === password) {
         if (match.isLocked || match.isDisabled) {
           return res.status(403).json({ error: "Tài khoản này đã bị khóa." });
@@ -550,13 +546,13 @@ async function startServer() {
         });
       }
 
-      // Optional hardcoded demo users, disabled unless ADMIN_AUTH_FALLBACK_ENABLED=true.
-      const initialUsersFallback = allowDevAuthFallback ? [
+      // 3. Fallback to hardcoded details exactly as requested by user if DB query failed/empty
+      const initialUsersFallback = [
         { id: "admin_account", name: "Admin", email: "admin@gmail.com", phone: "0987654321", role: "admin", password: "Abc@123" },
         { id: "nhanvien1_account", name: "Nhân viên trực sân 1", email: "nhanvien1@gmail.com", phone: "0911111111", role: "staff", password: "Abc@123" },
         { id: "nhanvien2_account", name: "Nhân viên trực sân 2", email: "nhanvien2@gmail.com", phone: "0922222222", role: "staff", password: "Abc@123" },
         { id: "ketoan_account", name: "Kế toán", email: "ketoan@gmail.com", phone: "0933333333", role: "accountant", password: "Abc@123" }
-      ] : [];
+      ];
 
       const foundFallback = initialUsersFallback.find(
         u => (u.email === cleanUsername || u.phone === cleanUsername) && u.password === password
@@ -579,12 +575,12 @@ async function startServer() {
     } catch (e: any) {
       console.error("Login endpoint general catch:", e.message);
       const cleanUsername = username.trim().toLowerCase();
-      const fallbackList = allowDevAuthFallback ? [
+      const fallbackList = [
         { id: "admin_account", name: "Admin", email: "admin@gmail.com", phone: "0987654321", role: "admin", password: "Abc@123" },
         { id: "nhanvien1_account", name: "Nhân viên trực sân 1", email: "nhanvien1@gmail.com", phone: "0911111111", role: "staff", password: "Abc@123" },
         { id: "nhanvien2_account", name: "Nhân viên trực sân 2", email: "nhanvien2@gmail.com", phone: "0922222222", role: "staff", password: "Abc@123" },
         { id: "ketoan_account", name: "Kế toán", email: "ketoan@gmail.com", phone: "0933333333", role: "accountant", password: "Abc@123" }
-      ] : [];
+      ];
       const matchFallback = fallbackList.find(u => (u.email === cleanUsername || u.phone === cleanUsername) && u.password === password);
       if (matchFallback) {
         return res.json({
@@ -622,7 +618,6 @@ async function startServer() {
       email: customer.email,
       phone: customer.phone,
       phoneNumber: customer.phone,
-      role: customer.role || 'customer',
       rankScore: customer.points || 0,
       isLocked: !!customer.isLocked,
       isDisabled: !!customer.isLocked,
@@ -811,75 +806,6 @@ async function startServer() {
     };
   };
 
-  const normalizeBookingStatus = (value: any) => {
-    const normalized = String(value || 'confirmed').trim().toLowerCase();
-    if (normalized === 'refund_pending' || normalized === 'refund-pending') return 'refund_pending';
-    if (normalized === 'no-show' || normalized === 'no_show') return 'no_show';
-    return normalized;
-  };
-
-  const parseMinutes = (value: any): number => {
-    if (typeof value === 'number' && Number.isFinite(value)) return value;
-    if (typeof value !== 'string') return 0;
-    const parts = value.split(':').map(Number);
-    if (parts.length === 2 && parts.every(Number.isFinite)) {
-      return parts[0] * 60 + parts[1];
-    }
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  };
-
-  const parseDateTimestamp = (value: any) => {
-    if (typeof value === 'string') {
-      const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
-      if (match) {
-        return admin.firestore.Timestamp.fromDate(
-          new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
-        );
-      }
-    }
-    const parsed = value ? new Date(value) : new Date();
-    return admin.firestore.Timestamp.fromDate(Number.isNaN(parsed.getTime()) ? new Date() : parsed);
-  };
-
-  const paymentStatusForBookingStatus = (status: string): string => {
-    if (status === 'confirmed' || status === 'completed') return 'success';
-    if (status === 'cancelled' || status === 'no_show') return 'cancelled';
-    if (status === 'refund_pending') return 'refund_pending';
-    return 'pending';
-  };
-
-  const statusTimestamps = (status: string, nowTimestamp: any) => {
-    if (status === 'confirmed' || status === 'completed') {
-      return { confirmedAt: nowTimestamp, paidAt: nowTimestamp };
-    }
-    if (status === 'cancelled' || status === 'no_show') {
-      return { cancelledAt: nowTimestamp };
-    }
-    return {};
-  };
-
-  const buildOrderData = (orderId: string, bookingId: string, bookingData: any, nowTimestamp: any) => {
-    const status = normalizeBookingStatus(bookingData.status);
-    const totalPrice = Number(bookingData.totalPrice || bookingData.totalAmount || 0);
-    return {
-      userId: bookingData.userId || 'walk-in',
-      bookingIds: [bookingId],
-      totalPrice,
-      totalAmount: totalPrice,
-      status,
-      orderStatus: status,
-      paymentStatus: paymentStatusForBookingStatus(status),
-      paymentProvider: 'admin_pos',
-      paidAmount: status === 'confirmed' || status === 'completed' ? totalPrice : 0,
-      rewardPointsGranted: false,
-      source: 'admin-web',
-      createdAt: bookingData.createdAt || nowTimestamp,
-      updatedAt: nowTimestamp,
-      ...statusTimestamps(status, nowTimestamp),
-    };
-  };
-
   app.get("/api/data-bookings", async (req, res) => {
     try {
       if (db) {
@@ -894,20 +820,38 @@ async function startServer() {
 
   app.post("/api/data-bookings", async (req, res) => {
     const newBookingData = req.body;
-    const startMinutes = parseMinutes(newBookingData.startTime);
-    const endMinutes = parseMinutes(newBookingData.endTime);
+    let startMinutes = 0;
+    let endMinutes = 0;
+
+    if (typeof newBookingData.startTime === 'string') {
+      const [startH, startM] = newBookingData.startTime.split(':').map(Number);
+      startMinutes = startH * 60 + startM;
+    } else if (typeof newBookingData.startTime === 'number') {
+      startMinutes = newBookingData.startTime;
+    }
+
+    if (typeof newBookingData.endTime === 'string') {
+      const [endH, endM] = newBookingData.endTime.split(':').map(Number);
+      endMinutes = endH * 60 + endM;
+    } else if (typeof newBookingData.endTime === 'number') {
+      endMinutes = newBookingData.endTime;
+    }
 
     const now = new Date();
     const nowTimestamp = admin.firestore.Timestamp.fromDate(now);
-    const dateTimestamp = parseDateTimestamp(newBookingData.date);
+    
+    let parsedBookingDate = new Date();
+    if (newBookingData.date) {
+      parsedBookingDate = new Date(newBookingData.date);
+    }
+    const dateTimestamp = admin.firestore.Timestamp.fromDate(parsedBookingDate);
 
-    const mappedStatus = normalizeBookingStatus(newBookingData.status || 'confirmed');
+    const mappedStatus = (newBookingData.status || 'confirmed').toLowerCase();
     const assignedId = newBookingData.id || "booking-" + Math.floor(Math.random() * 10000);
-    const orderId = String(newBookingData.orderId || assignedId);
-    const paymentStatus = paymentStatusForBookingStatus(mappedStatus);
 
     const bookingDataToSave = {
       bookingType: 'one-time',
+      confirmedAt: nowTimestamp,
       courtId: newBookingData.courtId,
       createdAt: nowTimestamp,
       date: dateTimestamp,
@@ -916,13 +860,13 @@ async function startServer() {
       fixedEndDate: null,
       fixedStartDate: null,
       fixedWeekdays: [],
-      orderId,
+      orderId: assignedId,
       orderStatus: mappedStatus,
-      paymentStatus,
+      paidAt: nowTimestamp,
+      paymentStatus: mappedStatus === 'completed' || mappedStatus === 'confirmed' ? 'success' : 'pending',
       startTime: startMinutes,
       status: mappedStatus,
       updatedAt: nowTimestamp,
-      ...statusTimestamps(mappedStatus, nowTimestamp),
       userId: newBookingData.customerId || newBookingData.userId || newBookingData.customerName || 'walk-in',
       totalPrice: newBookingData.totalAmount || newBookingData.totalPrice || 0,
       
@@ -931,10 +875,9 @@ async function startServer() {
       customerName: newBookingData.customerName || '',
       customerPhone: newBookingData.customerPhone || '',
       customerEmail: newBookingData.customerEmail || '',
-      pointsEarned: 0,
+      pointsEarned: newBookingData.pointsEarned || 0,
       walkinName: newBookingData.walkinName || newBookingData.customerName || ''
     };
-    const orderDataToSave = buildOrderData(orderId, assignedId, bookingDataToSave, nowTimestamp);
 
     const savedObj = { id: assignedId, ...bookingDataToSave };
 
@@ -948,10 +891,7 @@ async function startServer() {
 
     try {
       if (db) {
-        const batch = db.batch();
-        batch.set(db.collection("bookings").doc(assignedId), bookingDataToSave, { merge: true });
-        batch.set(db.collection("orders").doc(orderId), orderDataToSave, { merge: true });
-        await batch.commit();
+        await db.collection("bookings").doc(assignedId).set(bookingDataToSave, { merge: true });
       }
     } catch (error: any) {
       console.warn("⚠️ API Warning: Cannot write booking to Firestore (Resource Exhausted). Saved in memory.", error.message);
@@ -962,8 +902,8 @@ async function startServer() {
   app.put("/api/data-bookings/:id", async (req, res) => {
     const { id } = req.params;
     const { status, cancelledReason, endTime } = req.body;
-    const mappedStatus = normalizeBookingStatus(status);
-    const paymentStatus = paymentStatusForBookingStatus(mappedStatus);
+    let mappedStatus = status.toLowerCase();
+    if (status === 'Refund_Pending') mappedStatus = 'refund_pending';
 
     const now = new Date();
     const nowTimestamp = admin.firestore.Timestamp.fromDate(now);
@@ -973,13 +913,14 @@ async function startServer() {
     if (idx !== -1) {
       cacheBookings[idx].status = mappedStatus;
       cacheBookings[idx].orderStatus = mappedStatus;
-      cacheBookings[idx].paymentStatus = paymentStatus;
       cacheBookings[idx].updatedAt = { _seconds: Math.floor(now.getTime() / 1000), _nanoseconds: 0 };
       if (mappedStatus === 'confirmed' || mappedStatus === 'completed') {
         cacheBookings[idx].confirmedAt = { _seconds: Math.floor(now.getTime() / 1000), _nanoseconds: 0 };
         cacheBookings[idx].paidAt = { _seconds: Math.floor(now.getTime() / 1000), _nanoseconds: 0 };
+        cacheBookings[idx].paymentStatus = 'success';
       }
-      if (mappedStatus === 'cancelled' || mappedStatus === 'no_show') {
+      if (mappedStatus === 'cancelled' || mappedStatus === 'no-show') {
+         cacheBookings[idx].paymentStatus = 'cancelled';
          cacheBookings[idx].cancelledAt = { _seconds: Math.floor(now.getTime() / 1000), _nanoseconds: 0 };
          if (cancelledReason) cacheBookings[idx].cancelledReason = cancelledReason;
       }
@@ -990,56 +931,39 @@ async function startServer() {
 
     try {
       if (db) {
-        const bookingRef = db.collection("bookings").doc(id);
-        const bookingSnapshot = await bookingRef.get().catch(() => null);
-        const bookingData = bookingSnapshot?.exists
-          ? { id: bookingSnapshot.id, ...bookingSnapshot.data() }
-          : cacheBookings.find(b => String(b.id) === String(id)) || { id };
         const updateFields: any = {
           status: mappedStatus,
           orderStatus: mappedStatus,
-          paymentStatus,
           updatedAt: nowTimestamp
         };
         if (mappedStatus === 'confirmed' || mappedStatus === 'completed') {
           updateFields.confirmedAt = nowTimestamp;
           updateFields.paidAt = nowTimestamp;
+          updateFields.paymentStatus = 'success';
         }
-        if (mappedStatus === 'cancelled' || mappedStatus === 'no_show') {
+        if (mappedStatus === 'cancelled' || mappedStatus === 'no-show') {
+          updateFields.paymentStatus = 'cancelled';
           updateFields.cancelledAt = nowTimestamp;
           if (cancelledReason) updateFields.cancelledReason = cancelledReason;
         }
         if (endTime !== undefined) {
-          const endMinutes = parseMinutes(endTime);
-          if (endMinutes > 0) {
-            updateFields.endTime = endMinutes;
-          }
+           let endMinutes = 0;
+           if (typeof endTime === 'string') {
+             const parts = endTime.split(':');
+             if (parts.length === 2) {
+               endMinutes = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+             } else {
+               endMinutes = parseInt(endTime);
+             }
+           } else {
+             endMinutes = endTime;
+           }
+           if (endMinutes > 0) {
+             updateFields.endTime = endMinutes;
+           }
         }
 
-        const orderId = String((bookingData as any).orderId || id);
-        const totalPrice = Number((bookingData as any).totalPrice || 0);
-        const orderUpdateFields: any = {
-          userId: (bookingData as any).userId || 'walk-in',
-          bookingIds: [id],
-          totalPrice,
-          totalAmount: totalPrice,
-          status: mappedStatus,
-          orderStatus: mappedStatus,
-          paymentStatus,
-          updatedAt: nowTimestamp,
-          ...statusTimestamps(mappedStatus, nowTimestamp),
-        };
-        if (mappedStatus === 'confirmed' || mappedStatus === 'completed') {
-          orderUpdateFields.paidAmount = totalPrice;
-        }
-        if (cancelledReason && (mappedStatus === 'cancelled' || mappedStatus === 'no_show')) {
-          orderUpdateFields.cancelledReason = cancelledReason;
-        }
-
-        const batch = db.batch();
-        batch.set(bookingRef, updateFields, { merge: true });
-        batch.set(db.collection("orders").doc(orderId), orderUpdateFields, { merge: true });
-        await batch.commit();
+        await db.collection("bookings").doc(id).update(updateFields);
       }
     } catch (error: any) {
       console.warn("⚠️ API Warning: Cannot update booking in Firestore (Resource Exhausted). Saved in memory.", error.message);
@@ -1076,257 +1000,29 @@ async function startServer() {
   });
 
   app.put("/api/data-users/:id/points", async (req, res) => {
-    return res.status(410).json({
-      error: "Điểm thưởng chỉ được cộng bởi Backend C# khi đơn đã Completed."
-    });
-  });
+    const { id } = req.params;
+    const { pointsToAdd } = req.body;
 
-  const timestampSeconds = (value: any): number => {
-    if (!value) return 0;
-    if (typeof value._seconds === 'number') return value._seconds;
-    if (typeof value.seconds === 'number') return value.seconds;
-    if (value instanceof Date) return Math.floor(value.getTime() / 1000);
-    if (typeof value === 'string' || typeof value === 'number') {
-      const date = new Date(value);
-      if (!Number.isNaN(date.getTime())) return Math.floor(date.getTime() / 1000);
+    // Optimistically update memory cache
+    const idx = cacheUsers.findIndex(u => u.id === id);
+    if (idx !== -1) {
+      cacheUsers[idx].rankScore = (cacheUsers[idx].rankScore || 0) + pointsToAdd;
     }
-    return 0;
-  };
-
-  const dateFromTimestamp = (value: any): string => {
-    const seconds = timestampSeconds(value);
-    const date = seconds > 0 ? new Date(seconds * 1000) : new Date();
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
-  const formatMinutes = (minutes: any): string => {
-    const value = Number(minutes || 0);
-    const hours = Math.floor(value / 60).toString().padStart(2, '0');
-    const mins = Math.floor(value % 60).toString().padStart(2, '0');
-    return `${hours}:${mins}`;
-  };
-
-  const userDisplayName = (userId: string): string => {
-    const user = cacheUsers.find(u => u.id === userId);
-    return user?.fullName || user?.displayName || user?.name || user?.email || userId || 'User';
-  };
-
-  const courtDisplayName = (courtId: string): string => {
-    const court = cacheCourts.find(c => c.id === courtId);
-    return court?.name || courtId || 'N/A';
-  };
-
-  const loadOrderBookings = async (order: any): Promise<any[]> => {
-    const bookingIds = Array.isArray(order.bookingIds)
-      ? order.bookingIds.map((id: any) => String(id)).filter(Boolean)
-      : [];
-    const fromCache = cacheBookings.filter(b =>
-      bookingIds.includes(String(b.id)) || String(b.orderId || '') === String(order.id)
-    );
-    const byId = new Map(fromCache.map(b => [String(b.id), b]));
-
-    if (db && bookingIds.length > 0) {
-      for (const bookingId of bookingIds) {
-        if (byId.has(bookingId)) continue;
-        try {
-          const snapshot = await db.collection("bookings").doc(bookingId).get();
-          if (snapshot.exists) {
-            byId.set(bookingId, { id: snapshot.id, ...snapshot.data() });
-          }
-        } catch (_) {
-          // Keep cache fallback if Firestore is temporarily unavailable.
-        }
-      }
-    }
-
-    return Array.from(byId.values());
-  };
-
-  const mapOrderRefund = async (order: any) => {
-    const orderId = String(order.id || '');
-    const bookingsForOrder = await loadOrderBookings(order);
-    const firstBooking = bookingsForOrder[0] || {};
-    const distinctCourts = Array.from(new Set(
-      bookingsForOrder.map(b => String(b.courtId || '')).filter(Boolean)
-    ));
-    const courtName = distinctCourts.length <= 1
-      ? courtDisplayName(distinctCourts[0] || firstBooking.courtId || '')
-      : `${distinctCourts.length} san`;
-    const timeSlot = bookingsForOrder.length <= 1
-      ? `${formatMinutes(firstBooking.startTime)} - ${formatMinutes(firstBooking.endTime)}`
-      : `${bookingsForOrder.length} lich dat`;
-    const status = String(order.refundStatus || '').toLowerCase() === 'completed'
-      || String(order.status || '').toLowerCase() === 'cancelled'
-      ? 'Cancelled'
-      : 'Refund_Pending';
-
-    return {
-      id: orderId,
-      bookingId: String(firstBooking.id || orderId),
-      customerName: userDisplayName(String(order.userId || firstBooking.userId || '')),
-      bankName: order.bankName || '',
-      accountNumber: order.bankAccountNumber || '',
-      accountHolder: order.bankAccountName || '',
-      amount: Math.abs(Number(order.refundAmount || order.refundedAmount || 0)),
-      status,
-      courtName,
-      timeSlot,
-      date: dateFromTimestamp(firstBooking.date || order.refundRequestedAt || order.cancelledAt || order.updatedAt),
-      orderId,
-    };
-  };
-
-  const writeRefundCompletedNotification = async (order: any, nowTimestamp: any) => {
-    if (!db || !order?.userId || !order?.id) return;
-    const amount = Math.abs(Number(order.refundAmount || order.refundedAmount || 0));
-    const notificationRef = db
-      .collection("notifications")
-      .doc(`bank_refund_completed_${String(order.id).replace(/\//g, "_")}`);
-
-    await notificationRef.set({
-      userId: order.userId,
-      type: "payment",
-      title: "Hoàn tiền đã hoàn tất",
-      message: `Kế toán đã chuyển khoản hoàn tiền ${amount.toLocaleString('vi-VN')}đ. Vui lòng kiểm tra tài khoản ngân hàng.`,
-      isRead: false,
-      orderId: order.id,
-      refundAmount: amount,
-      createdAt: nowTimestamp,
-      updatedAt: nowTimestamp,
-    }, { merge: true });
 
     try {
-      const userDoc = await db.collection("users").doc(order.userId).get();
-      const userData = userDoc.exists ? userDoc.data() || {} : {};
-      const tokens = new Set<string>();
-      for (const field of ["fcmToken", "deviceToken"]) {
-        if (typeof userData[field] === "string" && userData[field].trim()) {
-          tokens.add(userData[field].trim());
-        }
-      }
-      for (const field of ["fcmTokens", "deviceTokens"]) {
-        if (Array.isArray(userData[field])) {
-          userData[field].forEach((token: any) => {
-            if (typeof token === "string" && token.trim()) tokens.add(token.trim());
-          });
-        }
-      }
-      if (tokens.size > 0) {
-        await admin.messaging().sendEachForMulticast({
-          tokens: Array.from(tokens),
-          notification: {
-            title: "Hoàn tiền đã hoàn tất",
-            body: "Kế toán đã chuyển khoản hoàn tiền. Vui lòng kiểm tra tài khoản ngân hàng.",
-          },
-          data: {
-            type: "payment",
-            orderId: String(order.id),
-            refundAmount: String(amount),
-          },
+      if (db) {
+        const userRef = db.collection("users").doc(id);
+        await db.runTransaction(async (t) => {
+          const doc = await t.get(userRef);
+          if (!doc.exists) throw new Error("Document does not exist!");
+          const currentPoints = doc.data()?.rankScore || 0;
+          t.update(userRef, { rankScore: currentPoints + pointsToAdd });
         });
       }
     } catch (error: any) {
-      console.warn("Could not send bank refund push notification.", error.message);
+      console.warn("⚠️ API Warning: Cannot update points in Firestore transaction (Resource Exhausted). Saved in memory.");
     }
-  };
-
-  app.get("/api/data-refunds", async (req, res) => {
-    try {
-      if (!db) {
-        return res.json(cacheRefunds);
-      }
-
-      const snap = await db.collection("orders").where("refundMethod", "==", "bank").get();
-      const orders = snap.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter((order: any) => {
-          const status = String(order.status || '').toLowerCase();
-          const refundStatus = String(order.refundStatus || '').toLowerCase();
-          return status === 'refund_pending'
-            || status === 'cancelled'
-            || refundStatus === 'pending'
-            || refundStatus === 'completed';
-        });
-      const refunds = await Promise.all(orders.map(mapOrderRefund));
-      refunds.sort((a, b) => {
-        const orderA: any = orders.find((o: any) => o.id === a.id) || {};
-        const orderB: any = orders.find((o: any) => o.id === b.id) || {};
-        return timestampSeconds(orderB.refundRequestedAt) - timestampSeconds(orderA.refundRequestedAt);
-      });
-      cacheRefunds = refunds;
-      return res.json(refunds);
-    } catch (error: any) {
-      console.warn("API Warning: Cannot fetch refund orders from Firestore. Supplying cache.", error.message);
-      return res.json(cacheRefunds);
-    }
-  });
-
-  app.put("/api/data-refunds/:orderId/complete", async (req, res) => {
-    const { orderId } = req.params;
-    const nowTimestamp = admin.firestore.Timestamp.fromDate(new Date());
-
-    try {
-      if (!db) {
-        cacheRefunds = cacheRefunds.map(r =>
-          r.id === orderId ? { ...r, status: 'Cancelled' } : r
-        );
-        return res.json({ success: true, id: orderId, status: 'Cancelled' });
-      }
-
-      const orderRef = db.collection("orders").doc(orderId);
-      const orderDoc = await orderRef.get();
-      if (!orderDoc.exists) {
-        return res.status(404).json({ error: "Refund order not found." });
-      }
-
-      const order = { id: orderDoc.id, ...orderDoc.data() } as any;
-      if (String(order.refundMethod || '').toLowerCase() !== 'bank') {
-        return res.status(400).json({ error: "This refund is not a bank transfer refund." });
-      }
-
-      const bookingsForOrder = await loadOrderBookings(order);
-      const batch = db.batch();
-      batch.set(orderRef, {
-        status: "cancelled",
-        orderStatus: "cancelled",
-        paymentStatus: "refunded",
-        refundStatus: "completed",
-        refundedAt: nowTimestamp,
-        updatedAt: nowTimestamp,
-      }, { merge: true });
-
-      bookingsForOrder.forEach(booking => {
-        if (!booking?.id) return;
-        batch.set(db.collection("bookings").doc(String(booking.id)), {
-          status: "cancelled",
-          orderStatus: "cancelled",
-          paymentStatus: "refunded",
-          refundStatus: "completed",
-          refundedAt: nowTimestamp,
-          updatedAt: nowTimestamp,
-        }, { merge: true });
-      });
-
-      await batch.commit();
-      await writeRefundCompletedNotification(order, nowTimestamp);
-
-      cacheBookings = cacheBookings.map(booking =>
-        bookingsForOrder.some(b => String(b.id) === String(booking.id))
-          ? { ...booking, status: "cancelled", orderStatus: "cancelled", paymentStatus: "refunded", refundStatus: "completed" }
-          : booking
-      );
-      cacheRefunds = cacheRefunds.map(r =>
-        r.id === orderId ? { ...r, status: 'Cancelled' } : r
-      );
-
-      return res.json({ success: true, id: orderId, status: 'Cancelled' });
-    } catch (error: any) {
-      console.error("Could not complete bank refund:", error);
-      return res.status(500).json({ error: error.message || "Could not complete bank refund." });
-    }
+    return res.json({ success: true });
   });
 
   app.get("/api/data-wallet", async (req, res) => {
