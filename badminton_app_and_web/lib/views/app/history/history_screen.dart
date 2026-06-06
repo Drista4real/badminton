@@ -99,7 +99,7 @@ class _HistoryTabBar extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
         ),
         child: TabBar(
-          isScrollable: true,
+          isScrollable: false,
           onTap: controller.selectTab,
           indicator: BoxDecoration(
             color: AppColors.primary,
@@ -116,6 +116,7 @@ class _HistoryTabBar extends StatelessWidget {
             fontWeight: FontWeight.w500,
             fontSize: 13,
           ),
+          labelPadding: EdgeInsets.zero,
           dividerColor: Colors.transparent,
           tabs: HistoryController.statusTabs
               .map((label) => Tab(text: label))
@@ -231,6 +232,8 @@ class _SingleBookingCard extends GetView<HistoryController> {
                           : () => Get.bottomSheet<void>(
                               _CancelRefundSheet(booking: booking),
                               isScrollControlled: true,
+                              backgroundColor: Colors.transparent,
+                              elevation: 0,
                               shape: const RoundedRectangleBorder(
                                 borderRadius: BorderRadius.vertical(
                                   top: Radius.circular(24),
@@ -409,6 +412,7 @@ class _CancelRefundSheet extends StatefulWidget {
 
 class _CancelRefundSheetState extends State<_CancelRefundSheet> {
   var _refundMethod = 'wallet';
+  final _formKey = GlobalKey<FormState>();
   final _bankNameController = TextEditingController();
   final _bankAccountNumberController = TextEditingController();
   final _bankAccountNameController = TextEditingController();
@@ -433,153 +437,471 @@ class _CancelRefundSheetState extends State<_CancelRefundSheet> {
     return '$hour:$minute';
   }
 
-  String get _courtReference {
-    final courtId = widget.booking.courtId.trim();
-    return courtId.isEmpty ? widget.booking.id : courtId;
-  }
-
   String get _bookingTimeReference {
     return '${_formatDate(widget.booking.bookingDate)} '
         '${_formatMinutes(widget.booking.startTime)} - '
         '${_formatMinutes(widget.booking.endTime)}';
   }
 
+  void _submit(HistoryController controller) {
+    if (_refundMethod == 'bank' &&
+        !(_formKey.currentState?.validate() ?? false)) {
+      return;
+    }
+
+    controller.cancelBookingWithRefund(
+      booking: widget.booking,
+      refundMethod: _refundMethod,
+      bankName: _bankNameController.text.trim(),
+      bankAccountNumber: _bankAccountNumberController.text.trim(),
+      bankAccountName: _bankAccountNameController.text.trim(),
+    );
+  }
+
+  String? _requiredField(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Vui lòng nhập đầy đủ thông tin';
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = Get.find<HistoryController>();
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isBankRefund = _refundMethod == 'bank';
 
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        20,
-        16,
-        20,
-        MediaQuery.of(context).viewInsets.bottom + 28,
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: Material(
+        color: colors.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        clipBehavior: Clip.antiAlias,
+        child: SafeArea(
+          top: false,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.88,
             ),
-            const SizedBox(height: 16),
-            const Text(
-              'Hủy đơn đặt sân',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: AppColors.black,
-              ),
-            ),
-            const SizedBox(height: 12),
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(
-                  value: 'wallet',
-                  icon: Icon(Icons.account_balance_wallet_rounded),
-                  label: Text('Ví tiền'),
-                ),
-                ButtonSegment(
-                  value: 'bank',
-                  icon: Icon(Icons.account_balance_rounded),
-                  label: Text('Ngân hàng'),
-                ),
-              ],
-              selected: {_refundMethod},
-              onSelectionChanged: (values) {
-                setState(() => _refundMethod = values.first);
-              },
-            ),
-            if (_refundMethod == 'bank') ...[
-              const SizedBox(height: 14),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF5F7FA),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE3E8EF)),
-                ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+              child: Form(
+                key: _formKey,
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Thông tin đối soát',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.black,
+                    Center(
+                      child: Container(
+                        width: 42,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: colors.outlineVariant,
+                          borderRadius: BorderRadius.circular(99),
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Sân đã đặt: $_courtReference',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF4B5563),
+                    const SizedBox(height: 18),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF1F1),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Icon(
+                            Icons.event_busy_rounded,
+                            color: Color(0xFFD32F2F),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Hủy đơn đặt sân',
+                                style: theme.textTheme.titleLarge?.copyWith(
+                                  fontSize: 18,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Chọn nơi nhận khoản tiền được hoàn',
+                                style: theme.textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: Get.back<void>,
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: colors.primary.withValues(alpha: 0.07),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: colors.primary.withValues(alpha: 0.14),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: colors.surface,
+                              borderRadius: BorderRadius.circular(11),
+                            ),
+                            child: Icon(
+                              Icons.sports_tennis_rounded,
+                              color: colors.primary,
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  controller.courtName(widget.booking),
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  _bookingTimeReference,
+                                  style: theme.textTheme.bodySmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            controller.formatMoney(widget.booking.totalPrice),
+                            style: TextStyle(
+                              color: colors.primary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 20),
                     Text(
-                      'Giờ đã đặt: $_bookingTimeReference',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF4B5563),
+                      'Phương thức hoàn tiền',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _RefundMethodCard(
+                            icon: Icons.account_balance_wallet_rounded,
+                            title: 'Ví tiền',
+                            subtitle: 'Nhận ngay trên ứng dụng',
+                            isSelected: !isBankRefund,
+                            onTap: () {
+                              setState(() => _refundMethod = 'wallet');
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _RefundMethodCard(
+                            icon: Icons.account_balance_rounded,
+                            title: 'Ngân hàng',
+                            subtitle: 'Kế toán chuyển khoản',
+                            isSelected: isBankRefund,
+                            onTap: () {
+                              setState(() => _refundMethod = 'bank');
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      child: isBankRefund
+                          ? Column(
+                              key: const ValueKey('bank-refund-form'),
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const _RefundNotice(
+                                  icon: Icons.schedule_rounded,
+                                  text:
+                                      'Yêu cầu sẽ xuất hiện trên trang kế toán. '
+                                      'Tiền được chuyển thủ công sau khi đối soát.',
+                                  color: Color(0xFF9A5B00),
+                                  backgroundColor: Color(0xFFFFF8E8),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'Tài khoản nhận tiền',
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                TextFormField(
+                                  controller: _bankNameController,
+                                  textInputAction: TextInputAction.next,
+                                  validator: _requiredField,
+                                  decoration: _fieldDecoration(
+                                    context,
+                                    label: 'Tên ngân hàng',
+                                    icon: Icons.account_balance_rounded,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                TextFormField(
+                                  controller: _bankAccountNumberController,
+                                  keyboardType: TextInputType.number,
+                                  textInputAction: TextInputAction.next,
+                                  validator: _requiredField,
+                                  decoration: _fieldDecoration(
+                                    context,
+                                    label: 'Số tài khoản',
+                                    icon: Icons.numbers_rounded,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                TextFormField(
+                                  controller: _bankAccountNameController,
+                                  textCapitalization:
+                                      TextCapitalization.characters,
+                                  textInputAction: TextInputAction.done,
+                                  validator: _requiredField,
+                                  onFieldSubmitted: (_) => _submit(controller),
+                                  decoration: _fieldDecoration(
+                                    context,
+                                    label: 'Tên chủ tài khoản',
+                                    icon: Icons.person_outline_rounded,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : const _RefundNotice(
+                              key: ValueKey('wallet-refund-notice'),
+                              icon: Icons.bolt_rounded,
+                              text:
+                                  'Khoản hoàn sẽ được cộng trực tiếp vào số dư '
+                                  'Ví tiền ngay sau khi hủy đơn thành công.',
+                              color: AppColors.primary,
+                              backgroundColor: Color(0xFFEFFAF8),
+                            ),
+                    ),
+                    const SizedBox(height: 20),
+                    Obx(() {
+                      final isProcessing = controller.processingBookingIds
+                          .contains(widget.booking.id);
+
+                      return CustomButton(
+                        text: isBankRefund
+                            ? 'Gửi yêu cầu cho kế toán'
+                            : 'Hủy đơn và hoàn vào Ví',
+                        isLoading: isProcessing,
+                        onTap: () => _submit(controller),
+                      );
+                    }),
+                    const SizedBox(height: 10),
+                    Center(
+                      child: Text(
+                        'Số tiền hoàn được tính theo chính sách tại thời điểm hủy.',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontSize: 11,
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _bankNameController,
-                textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(labelText: 'Tên ngân hàng'),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _bankAccountNumberController,
-                keyboardType: TextInputType.number,
-                textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(labelText: 'Số tài khoản'),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _bankAccountNameController,
-                textInputAction: TextInputAction.done,
-                decoration: const InputDecoration(labelText: 'Tên chủ thẻ'),
-              ),
-            ],
-            const SizedBox(height: 20),
-            Obx(() {
-              final isProcessing = controller.processingBookingIds.contains(
-                widget.booking.id,
-              );
-
-              return CustomButton(
-                text: _refundMethod == 'wallet'
-                    ? 'Hoàn vào Ví tiền'
-                    : 'Gửi yêu cầu hoàn tiền',
-                isLoading: isProcessing,
-                onTap: () => controller.cancelBookingWithRefund(
-                  booking: widget.booking,
-                  refundMethod: _refundMethod,
-                  bankName: _bankNameController.text.trim(),
-                  bankAccountNumber: _bankAccountNumberController.text.trim(),
-                  bankAccountName: _bankAccountNameController.text.trim(),
-                ),
-              );
-            }),
-          ],
+            ),
+          ),
         ),
+      ),
+    );
+  }
+
+  InputDecoration _fieldDecoration(
+    BuildContext context, {
+    required String label,
+    required IconData icon,
+  }) {
+    final colors = Theme.of(context).colorScheme;
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: BorderSide(color: colors.outlineVariant),
+    );
+
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: Icon(icon, size: 20),
+      filled: true,
+      fillColor: colors.surfaceContainerHighest.withValues(alpha: 0.45),
+      border: border,
+      enabledBorder: border,
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: colors.primary, width: 1.5),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
+    );
+  }
+}
+
+class _RefundMethodCard extends StatelessWidget {
+  const _RefundMethodCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final foreground = isSelected ? colors.primary : colors.onSurfaceVariant;
+
+    return Material(
+      color: isSelected
+          ? colors.primary.withValues(alpha: 0.08)
+          : colors.surfaceContainerHighest.withValues(alpha: 0.35),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          height: 92,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isSelected ? colors.primary : colors.outlineVariant,
+              width: isSelected ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? colors.primary.withValues(alpha: 0.12)
+                      : colors.surface,
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(icon, color: foreground, size: 20),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: foreground,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(fontSize: 10),
+                    ),
+                  ],
+                ),
+              ),
+              if (isSelected)
+                Icon(
+                  Icons.check_circle_rounded,
+                  color: colors.primary,
+                  size: 18,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RefundNotice extends StatelessWidget {
+  const _RefundNotice({
+    super.key,
+    required this.icon,
+    required this.text,
+    required this.color,
+    required this.backgroundColor,
+  });
+
+  final IconData icon;
+  final String text;
+  final Color color;
+  final Color backgroundColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 19),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                height: 1.45,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

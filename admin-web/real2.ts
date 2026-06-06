@@ -1,11 +1,19 @@
 import express from "express";
+import fs from "fs";
 import path from "path";
 import cors from "cors";
 import admin from "firebase-admin";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 // Initialize Firebase Admin
-try {
-  if (!admin.apps.length) {
+const initializeFirestore = (): ReturnType<typeof admin.firestore> | null => {
+  try {
+    if (admin.apps.length) {
+      return admin.firestore();
+    }
+
     const projectId = process.env.FIREBASE_PROJECT_ID;
     const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
     let rawKey = process.env.FIREBASE_PRIVATE_KEY || "";
@@ -24,16 +32,51 @@ try {
       admin.initializeApp({
         credential: admin.credential.cert({ projectId, clientEmail, privateKey }),
       });
-      console.log('✅ Firebase Admin initialized successfully (PORT 3001)');
-    } else {
-      console.warn('⚠️ Firebase Admin credentials not fully provided');
+      console.log('Firebase Admin initialized from environment variables');
+      return admin.firestore();
     }
-  }
-} catch (error) {
-  console.error("❌ Error initializing Firebase Admin:", error);
-}
 
-const db = admin.firestore?.();
+    const credentialsCandidates = [
+      process.env.FIREBASE_CREDENTIALS_PATH,
+      path.resolve(process.cwd(), "firebase-service-account.json"),
+      path.resolve(process.cwd(), "..", "firebase-service-account.json"),
+    ].filter((value): value is string => Boolean(value));
+    const credentialsPath = credentialsCandidates.find(candidate =>
+      fs.existsSync(candidate)
+    );
+
+    if (credentialsPath) {
+      const serviceAccount = JSON.parse(
+        fs.readFileSync(credentialsPath, "utf8")
+      ) as admin.ServiceAccount;
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+      });
+      console.log(`Firebase Admin initialized from ${credentialsPath}`);
+      return admin.firestore();
+    }
+
+    if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      admin.initializeApp({
+        credential: admin.credential.applicationDefault(),
+        projectId,
+      });
+      console.log('Firebase Admin initialized with application default credentials');
+      return admin.firestore();
+    }
+
+    console.warn(
+      'Firebase Admin is unavailable. Configure Firebase environment variables '
+        + 'or FIREBASE_CREDENTIALS_PATH.'
+    );
+    return null;
+  } catch (error) {
+    console.error("Error initializing Firebase Admin:", error);
+    return null;
+  }
+};
+
+const db = initializeFirestore();
 const allowDevAuthFallback = process.env.ADMIN_AUTH_FALLBACK_ENABLED === "true"
   && process.env.NODE_ENV !== "production";
 
@@ -1158,10 +1201,13 @@ async function startServer() {
     const timeSlot = bookingsForOrder.length <= 1
       ? `${formatMinutes(firstBooking.startTime)} - ${formatMinutes(firstBooking.endTime)}`
       : `${bookingsForOrder.length} lich dat`;
-    const status = String(order.refundStatus || '').toLowerCase() === 'completed'
-      || String(order.status || '').toLowerCase() === 'cancelled'
-      ? 'Cancelled'
-      : 'Refund_Pending';
+    const refundStatus = String(order.refundStatus || '').toLowerCase();
+    const orderStatus = String(order.status || order.orderStatus || '').toLowerCase();
+    const status = refundStatus === 'pending'
+      ? 'Refund_Pending'
+      : refundStatus === 'completed' || orderStatus === 'cancelled'
+        ? 'Cancelled'
+        : 'Refund_Pending';
 
     return {
       id: orderId,
@@ -1236,19 +1282,33 @@ async function startServer() {
   app.get("/api/data-refunds", async (req, res) => {
     try {
       if (!db) {
-        return res.json(cacheRefunds);
+        return res.status(503).json({
+          error: "Firestore is not initialized for the admin server.",
+        });
       }
 
-      const snap = await db.collection("orders").where("refundMethod", "==", "bank").get();
+      const snap = await db.collection("orders").get();
       const orders = snap.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
         .filter((order: any) => {
-          const status = String(order.status || '').toLowerCase();
+          const refundMethod = String(order.refundMethod || '').toLowerCase();
+          const status = String(order.status || order.orderStatus || '').toLowerCase();
           const refundStatus = String(order.refundStatus || '').toLowerCase();
-          return status === 'refund_pending'
+          const paymentStatus = String(order.paymentStatus || '').toLowerCase();
+          const hasBankDetails = Boolean(
+            String(order.bankName || '').trim()
+            && String(order.bankAccountNumber || '').trim()
+            && String(order.bankAccountName || '').trim()
+          );
+          const isBankRefund = refundMethod === 'bank'
+            || (!refundMethod && hasBankDetails);
+          const hasRefundState = status === 'refund_pending'
             || status === 'cancelled'
             || refundStatus === 'pending'
-            || refundStatus === 'completed';
+            || refundStatus === 'completed'
+            || paymentStatus === 'refund_pending'
+            || paymentStatus === 'refunded';
+          return isBankRefund && hasRefundState;
         });
       const refunds = await Promise.all(orders.map(mapOrderRefund));
       refunds.sort((a, b) => {
@@ -1259,8 +1319,10 @@ async function startServer() {
       cacheRefunds = refunds;
       return res.json(refunds);
     } catch (error: any) {
-      console.warn("API Warning: Cannot fetch refund orders from Firestore. Supplying cache.", error.message);
-      return res.json(cacheRefunds);
+      console.error("Cannot fetch refund orders from Firestore.", error);
+      return res.status(500).json({
+        error: error.message || "Cannot fetch refund orders from Firestore.",
+      });
     }
   });
 
