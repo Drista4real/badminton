@@ -168,12 +168,14 @@ class HistoryController extends GetxController {
   }
 
   DateTime? nextSessionStart(BookingModel booking) {
-    final now = DateTime.now();
     final startDate = _dateOnly(booking.fixedStartDate ?? booking.bookingDate);
     final endDate = booking.fixedEndDate == null
         ? startDate.add(const Duration(days: 370))
         : _dateOnly(booking.fixedEndDate!);
-    final searchStart = _dateOnly(now.isAfter(startDate) ? now : startDate);
+    final currentSessionDate = _dateOnly(booking.bookingDate);
+    final searchStart = currentSessionDate.isBefore(startDate)
+        ? startDate
+        : currentSessionDate.add(const Duration(days: 1));
     final weekdays = _fixedWeekdays(booking);
 
     for (var i = 0; i <= 370; i++) {
@@ -192,9 +194,7 @@ class HistoryController extends GetxController {
         booking.startTime ~/ 60,
         booking.startTime % 60,
       );
-      if (sessionStart.isAfter(now)) {
-        return sessionStart;
-      }
+      return sessionStart;
     }
 
     return null;

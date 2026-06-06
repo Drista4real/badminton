@@ -1,11 +1,19 @@
 import express from "express";
+import fs from "fs";
 import path from "path";
 import cors from "cors";
 import admin from "firebase-admin";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 // Initialize Firebase Admin
-try {
-  if (!admin.apps.length) {
+const initializeFirestore = (): ReturnType<typeof admin.firestore> | null => {
+  try {
+    if (admin.apps.length) {
+      return admin.firestore();
+    }
+
     const projectId = process.env.FIREBASE_PROJECT_ID;
     const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
     let rawKey = process.env.FIREBASE_PRIVATE_KEY || "";
@@ -24,16 +32,53 @@ try {
       admin.initializeApp({
         credential: admin.credential.cert({ projectId, clientEmail, privateKey }),
       });
-      console.log('✅ Firebase Admin initialized successfully (PORT 3001)');
-    } else {
-      console.warn('⚠️ Firebase Admin credentials not fully provided');
+      console.log('Firebase Admin initialized from environment variables');
+      return admin.firestore();
     }
-  }
-} catch (error) {
-  console.error("❌ Error initializing Firebase Admin:", error);
-}
 
-const db = admin.firestore?.();
+    const credentialsCandidates = [
+      process.env.FIREBASE_CREDENTIALS_PATH,
+      path.resolve(process.cwd(), "firebase-service-account.json"),
+      path.resolve(process.cwd(), "..", "firebase-service-account.json"),
+    ].filter((value): value is string => Boolean(value));
+    const credentialsPath = credentialsCandidates.find(candidate =>
+      fs.existsSync(candidate)
+    );
+
+    if (credentialsPath) {
+      const serviceAccount = JSON.parse(
+        fs.readFileSync(credentialsPath, "utf8")
+      ) as admin.ServiceAccount;
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+      });
+      console.log(`Firebase Admin initialized from ${credentialsPath}`);
+      return admin.firestore();
+    }
+
+    if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      admin.initializeApp({
+        credential: admin.credential.applicationDefault(),
+        projectId,
+      });
+      console.log('Firebase Admin initialized with application default credentials');
+      return admin.firestore();
+    }
+
+    console.warn(
+      'Firebase Admin is unavailable. Configure Firebase environment variables '
+        + 'or FIREBASE_CREDENTIALS_PATH.'
+    );
+    return null;
+  } catch (error) {
+    console.error("Error initializing Firebase Admin:", error);
+    return null;
+  }
+};
+
+const db = initializeFirestore();
+const allowDevAuthFallback = process.env.ADMIN_AUTH_FALLBACK_ENABLED === "true"
+  && process.env.NODE_ENV !== "production";
 
 // --- RESILIENT SERVER IN-MEMORY CACHE & SEED FALLBACK FOR FIRESTORE QUOTA RESILIENCY ---
 let cacheUsers: any[] = [
@@ -328,6 +373,8 @@ let cacheWallet: any[] = [
     createdAt: { _seconds: Math.floor(new Date("2026-06-04").getTime() / 1000), _nanoseconds: 0 }
   }
 ];
+
+let cacheRefunds: any[] = [];
 
 // Helper to synchronise on boot with Firestore if possible
 async function syncOnBoot() {
@@ -1000,29 +1047,257 @@ async function startServer() {
   });
 
   app.put("/api/data-users/:id/points", async (req, res) => {
-    const { id } = req.params;
-    const { pointsToAdd } = req.body;
+    return res.status(410).json({
+      error: "Điểm thưởng chỉ được cộng bởi Backend C# khi đơn đã Completed."
+    });
+  });
 
-    // Optimistically update memory cache
-    const idx = cacheUsers.findIndex(u => u.id === id);
-    if (idx !== -1) {
-      cacheUsers[idx].rankScore = (cacheUsers[idx].rankScore || 0) + pointsToAdd;
+  const timestampSeconds = (value: any): number => {
+    if (!value) return 0;
+    if (typeof value._seconds === 'number') return value._seconds;
+    if (typeof value.seconds === 'number') return value.seconds;
+    if (value instanceof Date) return Math.floor(value.getTime() / 1000);
+    if (typeof value === 'string' || typeof value === 'number') {
+      const date = new Date(value);
+      if (!Number.isNaN(date.getTime())) return Math.floor(date.getTime() / 1000);
+    }
+    return 0;
+  };
+
+  const dateFromTimestamp = (value: any): string => {
+    const seconds = timestampSeconds(value);
+    const date = seconds > 0 ? new Date(seconds * 1000) : new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const formatMinutes = (minutes: any): string => {
+    const value = Number(minutes || 0);
+    const hours = Math.floor(value / 60).toString().padStart(2, '0');
+    const mins = Math.floor(value % 60).toString().padStart(2, '0');
+    return `${hours}:${mins}`;
+  };
+
+  const userDisplayName = (userId: string): string => {
+    const user = cacheUsers.find(u => u.id === userId);
+    return user?.fullName || user?.displayName || user?.name || user?.email || userId || 'User';
+  };
+
+  const courtDisplayName = (courtId: string): string => {
+    const court = cacheCourts.find(c => c.id === courtId);
+    return court?.name || courtId || 'N/A';
+  };
+
+  const loadOrderBookings = async (order: any): Promise<any[]> => {
+    const bookingIds = Array.isArray(order.bookingIds)
+      ? order.bookingIds.map((id: any) => String(id)).filter(Boolean)
+      : [];
+    const fromCache = cacheBookings.filter(b =>
+      bookingIds.includes(String(b.id)) || String(b.orderId || '') === String(order.id)
+    );
+    const byId = new Map(fromCache.map(b => [String(b.id), b]));
+
+    if (db && bookingIds.length > 0) {
+      for (const bookingId of bookingIds) {
+        if (byId.has(bookingId)) continue;
+        try {
+          const snapshot = await db.collection("bookings").doc(bookingId).get();
+          if (snapshot.exists) {
+            byId.set(bookingId, { id: snapshot.id, ...snapshot.data() });
+          }
+        } catch (_) {
+          // Keep cache fallback if Firestore is temporarily unavailable.
+        }
+      }
     }
 
+    return Array.from(byId.values());
+  };
+
+  const mapOrderRefund = async (order: any) => {
+    const orderId = String(order.id || '');
+    const bookingsForOrder = await loadOrderBookings(order);
+    const firstBooking = bookingsForOrder[0] || {};
+    const distinctCourts = Array.from(new Set(
+      bookingsForOrder.map(b => String(b.courtId || '')).filter(Boolean)
+    ));
+    const courtName = distinctCourts.length <= 1
+      ? courtDisplayName(distinctCourts[0] || firstBooking.courtId || '')
+      : `${distinctCourts.length} san`;
+    const timeSlot = bookingsForOrder.length <= 1
+      ? `${formatMinutes(firstBooking.startTime)} - ${formatMinutes(firstBooking.endTime)}`
+      : `${bookingsForOrder.length} lich dat`;
+    const status = String(order.refundStatus || '').toLowerCase() === 'completed'
+      || String(order.status || '').toLowerCase() === 'cancelled'
+      ? 'Cancelled'
+      : 'Refund_Pending';
+
+    return {
+      id: orderId,
+      bookingId: String(firstBooking.id || orderId),
+      customerName: userDisplayName(String(order.userId || firstBooking.userId || '')),
+      bankName: order.bankName || '',
+      accountNumber: order.bankAccountNumber || '',
+      accountHolder: order.bankAccountName || '',
+      amount: Math.abs(Number(order.refundAmount || order.refundedAmount || 0)),
+      status,
+      courtName,
+      timeSlot,
+      date: dateFromTimestamp(firstBooking.date || order.refundRequestedAt || order.cancelledAt || order.updatedAt),
+      orderId,
+    };
+  };
+
+  const writeRefundCompletedNotification = async (order: any, nowTimestamp: any) => {
+    if (!db || !order?.userId || !order?.id) return;
+    const amount = Math.abs(Number(order.refundAmount || order.refundedAmount || 0));
+    const notificationRef = db
+      .collection("notifications")
+      .doc(`bank_refund_completed_${String(order.id).replace(/\//g, "_")}`);
+
+    await notificationRef.set({
+      userId: order.userId,
+      type: "payment",
+      title: "Hoàn tiền đã hoàn tất",
+      message: `Kế toán đã chuyển khoản hoàn tiền ${amount.toLocaleString('vi-VN')}đ. Vui lòng kiểm tra tài khoản ngân hàng.`,
+      isRead: false,
+      orderId: order.id,
+      refundAmount: amount,
+      createdAt: nowTimestamp,
+      updatedAt: nowTimestamp,
+    }, { merge: true });
+
     try {
-      if (db) {
-        const userRef = db.collection("users").doc(id);
-        await db.runTransaction(async (t) => {
-          const doc = await t.get(userRef);
-          if (!doc.exists) throw new Error("Document does not exist!");
-          const currentPoints = doc.data()?.rankScore || 0;
-          t.update(userRef, { rankScore: currentPoints + pointsToAdd });
+      const userDoc = await db.collection("users").doc(order.userId).get();
+      const userData = userDoc.exists ? userDoc.data() || {} : {};
+      const tokens = new Set<string>();
+      for (const field of ["fcmToken", "deviceToken"]) {
+        if (typeof userData[field] === "string" && userData[field].trim()) {
+          tokens.add(userData[field].trim());
+        }
+      }
+      for (const field of ["fcmTokens", "deviceTokens"]) {
+        if (Array.isArray(userData[field])) {
+          userData[field].forEach((token: any) => {
+            if (typeof token === "string" && token.trim()) tokens.add(token.trim());
+          });
+        }
+      }
+      if (tokens.size > 0) {
+        await admin.messaging().sendEachForMulticast({
+          tokens: Array.from(tokens),
+          notification: {
+            title: "Hoàn tiền đã hoàn tất",
+            body: "Kế toán đã chuyển khoản hoàn tiền. Vui lòng kiểm tra tài khoản ngân hàng.",
+          },
+          data: {
+            type: "payment",
+            orderId: String(order.id),
+            refundAmount: String(amount),
+          },
         });
       }
     } catch (error: any) {
-      console.warn("⚠️ API Warning: Cannot update points in Firestore transaction (Resource Exhausted). Saved in memory.");
+      console.warn("Could not send bank refund push notification.", error.message);
     }
-    return res.json({ success: true });
+  };
+
+  app.get("/api/data-refunds", async (req, res) => {
+    try {
+      if (!db) {
+        return res.json(cacheRefunds);
+      }
+
+      const snap = await db.collection("orders").where("refundMethod", "==", "bank").get();
+      const orders = snap.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter((order: any) => {
+          const status = String(order.status || '').toLowerCase();
+          const refundStatus = String(order.refundStatus || '').toLowerCase();
+          return status === 'refund_pending'
+            || status === 'cancelled'
+            || refundStatus === 'pending'
+            || refundStatus === 'completed';
+        });
+      const refunds = await Promise.all(orders.map(mapOrderRefund));
+      refunds.sort((a, b) => {
+        const orderA: any = orders.find((o: any) => o.id === a.id) || {};
+        const orderB: any = orders.find((o: any) => o.id === b.id) || {};
+        return timestampSeconds(orderB.refundRequestedAt) - timestampSeconds(orderA.refundRequestedAt);
+      });
+      cacheRefunds = refunds;
+      return res.json(refunds);
+    } catch (error: any) {
+      console.warn("API Warning: Cannot fetch refund orders from Firestore. Supplying cache.", error.message);
+      return res.json(cacheRefunds);
+    }
+  });
+
+  app.put("/api/data-refunds/:orderId/complete", async (req, res) => {
+    const { orderId } = req.params;
+    const nowTimestamp = admin.firestore.Timestamp.fromDate(new Date());
+
+    try {
+      if (!db) {
+        cacheRefunds = cacheRefunds.map(r =>
+          r.id === orderId ? { ...r, status: 'Cancelled' } : r
+        );
+        return res.json({ success: true, id: orderId, status: 'Cancelled' });
+      }
+
+      const orderRef = db.collection("orders").doc(orderId);
+      const orderDoc = await orderRef.get();
+      if (!orderDoc.exists) {
+        return res.status(404).json({ error: "Refund order not found." });
+      }
+
+      const order = { id: orderDoc.id, ...orderDoc.data() } as any;
+      if (String(order.refundMethod || '').toLowerCase() !== 'bank') {
+        return res.status(400).json({ error: "This refund is not a bank transfer refund." });
+      }
+
+      const bookingsForOrder = await loadOrderBookings(order);
+      const batch = db.batch();
+      batch.set(orderRef, {
+        status: "cancelled",
+        orderStatus: "cancelled",
+        paymentStatus: "refunded",
+        refundStatus: "completed",
+        refundedAt: nowTimestamp,
+        updatedAt: nowTimestamp,
+      }, { merge: true });
+
+      bookingsForOrder.forEach(booking => {
+        if (!booking?.id) return;
+        batch.set(db.collection("bookings").doc(String(booking.id)), {
+          status: "cancelled",
+          orderStatus: "cancelled",
+          paymentStatus: "refunded",
+          refundStatus: "completed",
+          refundedAt: nowTimestamp,
+          updatedAt: nowTimestamp,
+        }, { merge: true });
+      });
+
+      await batch.commit();
+      await writeRefundCompletedNotification(order, nowTimestamp);
+
+      cacheBookings = cacheBookings.map(booking =>
+        bookingsForOrder.some(b => String(b.id) === String(booking.id))
+          ? { ...booking, status: "cancelled", orderStatus: "cancelled", paymentStatus: "refunded", refundStatus: "completed" }
+          : booking
+      );
+      cacheRefunds = cacheRefunds.map(r =>
+        r.id === orderId ? { ...r, status: 'Cancelled' } : r
+      );
+
+      return res.json({ success: true, id: orderId, status: 'Cancelled' });
+    } catch (error: any) {
+      console.error("Could not complete bank refund:", error);
+      return res.status(500).json({ error: error.message || "Could not complete bank refund." });
+    }
   });
 
   app.get("/api/data-wallet", async (req, res) => {
