@@ -293,7 +293,7 @@ export default function App() {
         return nameMatch || phoneMatch;
       });
       if (matchedCustomer) {
-        earnedPoints = Math.floor(newBooking.totalAmount / 10000);
+        earnedPoints = Math.floor(newBooking.totalAmount / 200);
         setCustomers(prev => prev.map(c => {
           if (c.id === matchedCustomer.id) return { ...c, points: (c.points || 0) + earnedPoints };
           return c;
@@ -325,9 +325,42 @@ export default function App() {
   };
 
   const handleUpdateBookingStatus = async (id: string, newStatus: Booking['status'], updates?: any) => {
+    let earnedPoints = 0;
+    let targetBooking = bookings.find(b => b.id === id);
+    let customerToUpdate: Customer | undefined;
+
+    if (targetBooking && (targetBooking.status !== 'Completed' && targetBooking.status !== 'Confirmed') && (newStatus === 'Completed' || newStatus === 'Confirmed') && targetBooking.customerType === 'App' && (!targetBooking.pointsEarned || targetBooking.pointsEarned === 0)) {
+       customerToUpdate = customers.find(c => {
+         if (targetBooking?.customerId && c.id === targetBooking.customerId) return true;
+         // fallback match
+         const nameMatch = c.name === targetBooking?.customerName;
+         const phoneMatch = targetBooking?.customerPhone && targetBooking.customerPhone !== '0934567XXX' && c.phone === targetBooking.customerPhone;
+         return nameMatch || phoneMatch;
+       });
+       if (customerToUpdate) {
+         earnedPoints = Math.floor(targetBooking.totalAmount / 200);
+         setCustomers(prev => prev.map(c => 
+           c.id === customerToUpdate!.id ? { ...c, points: (c.points || 0) + earnedPoints } : c
+         ));
+         try {
+           fetch(`/api/data-users/${customerToUpdate.id}/points`, {
+             method: 'PUT',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({ pointsToAdd: earnedPoints })
+           });
+         } catch(e) { console.error(e); }
+       }
+    }
+
+    // Include pointsEarned if we granted them now
+    const safeUpdates = { ...updates };
+    if (earnedPoints > 0) {
+      safeUpdates.pointsEarned = earnedPoints;
+    }
+
     setBookings(prev => prev.map(booking => {
       if (booking.id === id) {
-        return { ...booking, status: newStatus, ...updates };
+        return { ...booking, status: newStatus, ...safeUpdates };
       }
       return booking;
     }));
@@ -336,7 +369,7 @@ export default function App() {
       await fetch(`/api/data-bookings/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus, ...updates })
+        body: JSON.stringify({ status: newStatus, ...safeUpdates })
       });
     } catch(err) {
       console.error(err);
