@@ -1093,11 +1093,10 @@ export default function PosGridView({
                       )}
                     </div>
 
-                    {/* VietinBank transfer accounts */}
+                    {/* VietQR transfer account is configured on the backend. */}
                     <div className="text-xs font-semibold text-slate-700 space-y-1.5">
-                      <p>Hệ thống: <b className="text-slate-900 font-bold">VietinBank</b></p>
-                      <p>Số tài khoản: <b className="text-slate-900 font-mono font-bold">104879645387</b></p>
-                      <p>Chủ tài khoản: <b className="text-slate-900 font-bold uppercase">NGUYEN DUC VINH</b></p>
+                      <p>Hệ thống: <b className="text-slate-900 font-bold">VietQR</b></p>
+                      <p>Tài khoản nhận: <b className="text-slate-900 font-bold">Theo cấu hình backend</b></p>
                       <p className="text-sm border-t border-slate-100 pt-2 text-[#005C53] font-extrabold">
                         Phải thanh toán: <b>{totalBookingAmount.toLocaleString('vi-VN')} VNĐ</b>
                       </p>

@@ -1,6 +1,7 @@
 import fetch from 'node-fetch'; // Next, use built in fetch if Node >= 18
 async function run() {
-  const apiToken = "4FN5WRSVSFOBSZTKDKLURE9I0F6JGGTJZ7DYJUHX3NWUVALPPPBHNF7K0XLAMQOC";
+  const apiToken = process.env.SEPAY_API_TOKEN;
+  if (!apiToken) throw new Error("Missing SEPAY_API_TOKEN");
   const response = await fetch("https://my.sepay.vn/userapi/transactions/list", {
       headers: {
           "Authorization": `Bearer ${apiToken}`,

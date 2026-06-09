@@ -1133,10 +1133,19 @@ async function startServer() {
     if (!amount || !bookingRef) return res.status(400).json({ error: "Thiếu số tiền hoặc mã giao dịch" });
 
     try {
+      const accountNo = process.env.VIETQR_ACCOUNT_NO;
+      const accountName = process.env.VIETQR_ACCOUNT_NAME;
+      const bankBin = process.env.VIETQR_BANK_BIN;
+      const clientId = process.env.VIETQR_CLIENT_ID;
+      const apiKey = process.env.VIETQR_API_KEY;
+      if (!accountNo || !accountName || !bankBin || !clientId || !apiKey) {
+        return res.status(500).json({ error: "Thiếu cấu hình VietQR trong biến môi trường." });
+      }
+
       const payload = {
-        accountNo: process.env.VIETQR_ACCOUNT_NO || "104879645387",
-        accountName: process.env.VIETQR_ACCOUNT_NAME || "Nguyen Duc Vinh",
-        acqId: process.env.VIETQR_BANK_BIN || "970415",
+        accountNo,
+        accountName,
+        acqId: bankBin,
         amount: amount,
         addInfo: `SEVQR ${bookingRef}`,
         format: "text",
@@ -1146,8 +1155,8 @@ async function startServer() {
       const response = await fetch("https://api.vietqr.io/v2/generate", {
         method: "POST",
         headers: {
-          "x-client-id": process.env.VIETQR_CLIENT_ID || "a6b2ea31-e75b-4de8-927a-d4e0f82751e8",
-          "x-api-key": process.env.VIETQR_API_KEY || "a98fe2b5-4b35-44a0-bf7e-79e1dd2e0e34",
+          "x-client-id": clientId,
+          "x-api-key": apiKey,
           "Content-Type": "application/json"
         },
         body: JSON.stringify(payload)
@@ -1193,7 +1202,10 @@ async function startServer() {
     }
 
     try {
-       const apiToken = process.env.SEPAY_API_TOKEN || "4FN5WRSVSFOBSZTKDKLURE9I0F6JGGTJZ7DYJUHX3NWUVALPPPBHNF7K0XLAMQOC";
+       const apiToken = process.env.SEPAY_API_TOKEN;
+       if (!apiToken) {
+           return res.json({ paid: false, configured: false, error: "Thiếu cấu hình SEPAY_API_TOKEN." });
+       }
        const response = await fetch("https://userapi.sepay.vn/v2/transactions", {
            headers: {
                "Authorization": `Bearer ${apiToken}`,
